@@ -1,6 +1,6 @@
 {
   "name": "dash.js",
-  "version": "2.0.0",
+  "version": "2.0.0-grant-access",
   "description": "A reference client implementation for the playback of MPEG DASH via Javascript and compliant browsers.",
   "main": "dist/dash.all.debug.js",
   "scripts": {
