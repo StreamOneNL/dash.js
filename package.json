@@ -1,5 +1,5 @@
 {
-  "name": "dashjs-s1",
+  "name": "dashjs",
   "version": "2.0.1",
   "description": "A reference client implementation for the playback of MPEG DASH via Javascript and compliant browsers.",
   "main": "index.js",
