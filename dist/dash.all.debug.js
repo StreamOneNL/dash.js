@@ -2087,7 +2087,7 @@ exports.MediaPlayerFactory = _srcStreamingMediaPlayerFactoryJs2['default'];
 
 }).call(this,typeof global !== "undefined" ? global : typeof self !== "undefined" ? self : typeof window !== "undefined" ? window : {})
 
-},{"./src/streaming/MediaPlayer.js":33,"./src/streaming/MediaPlayerFactory.js":35,"./src/streaming/metrics/MetricsReporting.js":56,"./src/streaming/protection/Protection.js":86}],6:[function(_dereq_,module,exports){
+},{"./src/streaming/MediaPlayer.js":38,"./src/streaming/MediaPlayerFactory.js":40,"./src/streaming/metrics/MetricsReporting.js":61,"./src/streaming/protection/Protection.js":91}],6:[function(_dereq_,module,exports){
 /*! codem-isoboxer v0.2.2 https://github.com/madebyhiro/codem-isoboxer/blob/master/LICENSE.txt */
 var ISOBoxer = {};
 
@@ -3762,7 +3762,7 @@ DashAdapter.__dashjs_factory_name = 'DashAdapter';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(DashAdapter);
 module.exports = exports['default'];
 
-},{"../../externals/cea608-parser.js":2,"../core/FactoryMaker.js":9,"../streaming/vo/ManifestInfo.js":140,"../streaming/vo/MediaInfo.js":141,"../streaming/vo/StreamInfo.js":143,"../streaming/vo/TrackInfo.js":146,"./vo/Event.js":23}],14:[function(_dereq_,module,exports){
+},{"../../externals/cea608-parser.js":2,"../core/FactoryMaker.js":9,"../streaming/vo/ManifestInfo.js":145,"../streaming/vo/MediaInfo.js":146,"../streaming/vo/StreamInfo.js":148,"../streaming/vo/TrackInfo.js":151,"./vo/Event.js":28}],14:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -3801,10 +3801,6 @@ Object.defineProperty(exports, '__esModule', {
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
 
-var _voSegmentJs = _dereq_('./vo/Segment.js');
-
-var _voSegmentJs2 = _interopRequireDefault(_voSegmentJs);
-
 var _streamingVoFragmentRequestJs = _dereq_('../streaming/vo/FragmentRequest.js');
 
 var _streamingVoFragmentRequestJs2 = _interopRequireDefault(_streamingVoFragmentRequestJs);
@@ -3833,6 +3829,12 @@ var _coreDebugJs = _dereq_('../core/Debug.js');
 
 var _coreDebugJs2 = _interopRequireDefault(_coreDebugJs);
 
+var _utilsSegmentsUtilsJs = _dereq_('./utils/SegmentsUtils.js');
+
+var _utilsSegmentsGetterJs = _dereq_('./utils/SegmentsGetter.js');
+
+var _utilsSegmentsGetterJs2 = _interopRequireDefault(_utilsSegmentsGetterJs);
+
 var SEGMENTS_UNAVAILABLE_ERROR_CODE = 1;
 
 function DashHandler(config) {
@@ -3853,11 +3855,14 @@ function DashHandler(config) {
         type = undefined,
         currentTime = undefined,
         absUrl = undefined,
-        streamProcessor = undefined;
+        streamProcessor = undefined,
+        initialSegmentList = undefined,
+        segmentsGetter = undefined;
 
     function setup() {
         index = -1;
         currentTime = 0;
+        initialSegmentList = null;
         absUrl = new RegExp('^(?:(?:[a-z]+:)?\/)?\/', 'i');
 
         eventBus.on(_coreEventsEventsJs2['default'].INITIALIZATION_LOADED, onInitializationLoaded, instance);
@@ -3868,6 +3873,8 @@ function DashHandler(config) {
         streamProcessor = StreamProcessor;
         type = streamProcessor.getType();
         isDynamic = streamProcessor.isDynamic();
+
+        segmentsGetter = (0, _utilsSegmentsGetterJs2['default'])(context).create(config, isDynamic);
     }
 
     function getStreamProcessor() {
@@ -3886,8 +3893,14 @@ function DashHandler(config) {
         return index;
     }
 
+    function getInitialSegmentList() {
+        return initialSegmentList;
+    }
+
     function reset() {
+        segmentsGetter = null;
         currentTime = 0;
+        initialSegmentList = null;
         requestedTime = NaN;
         index = -1;
         isDynamic = null;
@@ -3895,79 +3908,6 @@ function DashHandler(config) {
         streamProcessor = null;
         eventBus.off(_coreEventsEventsJs2['default'].INITIALIZATION_LOADED, onInitializationLoaded, instance);
         eventBus.off(_coreEventsEventsJs2['default'].SEGMENTS_LOADED, onSegmentsLoaded, instance);
-    }
-
-    function zeroPadToLength(numStr, minStrLength) {
-        while (numStr.length < minStrLength) {
-            numStr = '0' + numStr;
-        }
-        return numStr;
-    }
-
-    function replaceTokenForTemplate(url, token, value) {
-        var formatTag = '%0';
-
-        var startPos, endPos, formatTagPos, specifier, width, paddedValue;
-
-        var tokenLen = token.length;
-        var formatTagLen = formatTag.length;
-
-        // keep looping round until all instances of <token> have been
-        // replaced. once that has happened, startPos below will be -1
-        // and the completed url will be returned.
-        while (true) {
-
-            // check if there is a valid $<token>...$ identifier
-            // if not, return the url as is.
-            startPos = url.indexOf('$' + token);
-            if (startPos < 0) {
-                return url;
-            }
-
-            // the next '$' must be the end of the identifier
-            // if there isn't one, return the url as is.
-            endPos = url.indexOf('$', startPos + tokenLen);
-            if (endPos < 0) {
-                return url;
-            }
-
-            // now see if there is an additional format tag suffixed to
-            // the identifier within the enclosing '$' characters
-            formatTagPos = url.indexOf(formatTag, startPos + tokenLen);
-            if (formatTagPos > startPos && formatTagPos < endPos) {
-
-                specifier = url.charAt(endPos - 1);
-                width = parseInt(url.substring(formatTagPos + formatTagLen, endPos - 1), 10);
-
-                // support the minimum specifiers required by IEEE 1003.1
-                // (d, i , o, u, x, and X) for completeness
-                switch (specifier) {
-                    // treat all int types as uint,
-                    // hence deliberate fallthrough
-                    case 'd':
-                    case 'i':
-                    case 'u':
-                        paddedValue = zeroPadToLength(value.toString(), width);
-                        break;
-                    case 'x':
-                        paddedValue = zeroPadToLength(value.toString(16), width);
-                        break;
-                    case 'X':
-                        paddedValue = zeroPadToLength(value.toString(16), width).toUpperCase();
-                        break;
-                    case 'o':
-                        paddedValue = zeroPadToLength(value.toString(8), width);
-                        break;
-                    default:
-                        log('Unsupported/invalid IEEE 1003.1 format identifier string in URL');
-                        return url;
-                }
-            } else {
-                paddedValue = value;
-            }
-
-            url = url.substring(0, startPos) + paddedValue + url.substring(endPos + 1);
-        }
     }
 
     function unescapeDollarsInTemplate(url) {
@@ -3980,10 +3920,6 @@ function DashHandler(config) {
         }
         var v = value.toString();
         return url.split('$RepresentationID$').join(v);
-    }
-
-    function getNumberForSegment(segment, segmentIndex) {
-        return segment.representation.startNumber + segmentIndex;
     }
 
     function getRequestUrl(destination, representation) {
@@ -4042,13 +3978,13 @@ function DashHandler(config) {
         if (index < 0) {
             isFinished = false;
         } else if (isDynamic || index < representation.availableSegmentsNumber) {
-            seg = getSegmentByIndex(index, representation);
+            seg = (0, _utilsSegmentsUtilsJs.getSegmentByIndex)(index, representation);
 
             if (seg) {
                 fTime = seg.presentationStartTime - period.start;
                 sDuration = representation.adaptation.period.duration;
                 log(representation.segmentInfoType + ': ' + fTime + ' / ' + sDuration);
-                isFinished = segmentInfoType === 'SegmentTimeline' ? false : fTime >= sDuration;
+                isFinished = segmentInfoType === 'SegmentTimeline' && isDynamic ? false : fTime >= sDuration;
             }
         } else {
             isFinished = true;
@@ -4057,374 +3993,18 @@ function DashHandler(config) {
         return isFinished;
     }
 
-    function getIndexBasedSegment(representation, index) {
-        var seg, duration, presentationStartTime, presentationEndTime;
-
-        duration = representation.segmentDuration;
-
-        /*
-         * From spec - If neither @duration attribute nor SegmentTimeline element is present, then the Representation
-         * shall contain exactly one Media Segment. The MPD start time is 0 and the MPD duration is obtained
-         * in the same way as for the last Media Segment in the Representation.
-         */
-        if (isNaN(duration)) {
-            duration = representation.adaptation.period.duration;
-        }
-
-        presentationStartTime = representation.adaptation.period.start + index * duration;
-        presentationEndTime = presentationStartTime + duration;
-
-        seg = new _voSegmentJs2['default']();
-
-        seg.representation = representation;
-        seg.duration = duration;
-        seg.presentationStartTime = presentationStartTime;
-
-        seg.mediaStartTime = timelineConverter.calcMediaTimeFromPresentationTime(seg.presentationStartTime, representation);
-
-        seg.availabilityStartTime = timelineConverter.calcAvailabilityStartTimeFromPresentationTime(seg.presentationStartTime, representation.adaptation.period.mpd, isDynamic);
-        seg.availabilityEndTime = timelineConverter.calcAvailabilityEndTimeFromPresentationTime(presentationEndTime, representation.adaptation.period.mpd, isDynamic);
-
-        // at this wall clock time, the video element currentTime should be seg.presentationStartTime
-        seg.wallStartTime = timelineConverter.calcWallTimeForSegment(seg, isDynamic);
-
-        seg.replacementNumber = getNumberForSegment(seg, index);
-        seg.availabilityIdx = index;
-
-        return seg;
-    }
-
-    function getSegmentsFromTimeline(representation) {
-        var template = representation.adaptation.period.mpd.manifest.Period_asArray[representation.adaptation.period.index].AdaptationSet_asArray[representation.adaptation.index].Representation_asArray[representation.index].SegmentTemplate;
-        var timeline = template.SegmentTimeline;
-        var isAvailableSegmentNumberCalculated = representation.availableSegmentsNumber > 0;
-
-        var maxSegmentsAhead = 10;
-        var time = 0;
-        var scaledTime = 0;
-        var availabilityIdx = -1;
-        var segments = [];
-        var isStartSegmentForRequestedTimeFound = false;
-
-        var fragments, frag, i, len, j, repeat, repeatEndTime, nextFrag, calculatedRange, hasEnoughSegments, requiredMediaTime, startIdx, endIdx, fTimescale;
-
-        var createSegment = function createSegment(s) {
-            return getTimeBasedSegment(representation, time, s.d, fTimescale, template.media, s.mediaRange, availabilityIdx);
-        };
-
-        fTimescale = representation.timescale;
-
-        fragments = timeline.S_asArray;
-
-        calculatedRange = decideSegmentListRangeForTimeline(representation);
-
-        // if calculatedRange exists we should generate segments that belong to this range.
-        // Otherwise generate maxSegmentsAhead segments ahead of the requested time
-        if (calculatedRange) {
-            startIdx = calculatedRange.start;
-            endIdx = calculatedRange.end;
-        } else {
-            requiredMediaTime = timelineConverter.calcMediaTimeFromPresentationTime(requestedTime || 0, representation);
-        }
-
-        for (i = 0, len = fragments.length; i < len; i++) {
-            frag = fragments[i];
-            repeat = 0;
-            if (frag.hasOwnProperty('r')) {
-                repeat = frag.r;
-            }
-
-            //For a repeated S element, t belongs only to the first segment
-            if (frag.hasOwnProperty('t')) {
-                time = frag.t;
-                scaledTime = time / fTimescale;
-            }
-
-            //This is a special case: "A negative value of the @r attribute of the S element indicates that the duration indicated in @d attribute repeats until the start of the next S element, the end of the Period or until the
-            // next MPD update."
-            if (repeat < 0) {
-                nextFrag = fragments[i + 1];
-
-                if (nextFrag && nextFrag.hasOwnProperty('t')) {
-                    repeatEndTime = nextFrag.t / fTimescale;
-                } else {
-                    var availabilityEnd = representation.segmentAvailabilityRange ? representation.segmentAvailabilityRange.end : timelineConverter.calcSegmentAvailabilityRange(representation, isDynamic).end;
-                    repeatEndTime = timelineConverter.calcMediaTimeFromPresentationTime(availabilityEnd, representation);
-                    representation.segmentDuration = frag.d / fTimescale;
-                }
-
-                repeat = Math.ceil((repeatEndTime - scaledTime) / (frag.d / fTimescale)) - 1;
-            }
-
-            // if we have enough segments in the list, but we have not calculated the total number of the segments yet we
-            // should continue the loop and calc the number. Once it is calculated, we can break the loop.
-            if (hasEnoughSegments) {
-                if (isAvailableSegmentNumberCalculated) break;
-                availabilityIdx += repeat + 1;
-                continue;
-            }
-
-            for (j = 0; j <= repeat; j++) {
-                availabilityIdx++;
-
-                if (calculatedRange) {
-                    if (availabilityIdx > endIdx) {
-                        hasEnoughSegments = true;
-                        if (isAvailableSegmentNumberCalculated) break;
-                        continue;
-                    }
-
-                    if (availabilityIdx >= startIdx) {
-                        segments.push(createSegment(frag));
-                    }
-                } else {
-                    if (segments.length > maxSegmentsAhead) {
-                        hasEnoughSegments = true;
-                        if (isAvailableSegmentNumberCalculated) break;
-                        continue;
-                    }
-
-                    // In some cases when requiredMediaTime = actual end time of the last segment
-                    // it is possible that this time a bit exceeds the declared end time of the last segment.
-                    // in this case we still need to include the last segment in the segment list. to do this we
-                    // use a correction factor = 1.5. This number is used because the largest possible deviation is
-                    // is 50% of segment duration.
-                    if (isStartSegmentForRequestedTimeFound) {
-                        segments.push(createSegment(frag));
-                    } else if (scaledTime >= requiredMediaTime - frag.d / fTimescale * 1.5) {
-                        isStartSegmentForRequestedTimeFound = true;
-                        segments.push(createSegment(frag));
-                    }
-                }
-
-                time += frag.d;
-                scaledTime = time / fTimescale;
-            }
-        }
-
-        if (!isAvailableSegmentNumberCalculated) {
-            representation.availableSegmentsNumber = availabilityIdx + 1;
-        }
-
-        return segments;
-    }
-
-    function getSegmentsFromTemplate(representation) {
-        var template = representation.adaptation.period.mpd.manifest.Period_asArray[representation.adaptation.period.index].AdaptationSet_asArray[representation.adaptation.index].Representation_asArray[representation.index].SegmentTemplate;
-        var duration = representation.segmentDuration;
-        var availabilityWindow = representation.segmentAvailabilityRange;
-
-        var segments = [];
-        var url = null;
-        var seg = null;
-
-        var segmentRange, periodSegIdx, startIdx, endIdx, start;
-
-        start = representation.startNumber;
-
-        if (isNaN(duration) && !isDynamic) {
-            segmentRange = { start: start, end: start };
-        } else {
-            segmentRange = decideSegmentListRangeForTemplate(representation);
-        }
-
-        startIdx = segmentRange.start;
-        endIdx = segmentRange.end;
-
-        for (periodSegIdx = startIdx; periodSegIdx <= endIdx; periodSegIdx++) {
-
-            seg = getIndexBasedSegment(representation, periodSegIdx);
-            seg.replacementTime = (start + periodSegIdx - 1) * representation.segmentDuration;
-            url = template.media;
-            url = replaceTokenForTemplate(url, 'Number', seg.replacementNumber);
-            url = replaceTokenForTemplate(url, 'Time', seg.replacementTime);
-            seg.media = url;
-
-            segments.push(seg);
-            seg = null;
-        }
-
-        if (isNaN(duration)) {
-            representation.availableSegmentsNumber = 1;
-        } else {
-            representation.availableSegmentsNumber = Math.ceil((availabilityWindow.end - availabilityWindow.start) / duration);
-        }
-
-        return segments;
-    }
-
-    function decideSegmentListRangeForTemplate(representation) {
-        var duration = representation.segmentDuration;
-        var minBufferTime = representation.adaptation.period.mpd.manifest.minBufferTime;
-        var availabilityWindow = representation.segmentAvailabilityRange;
-        var periodRelativeRange = {
-            start: timelineConverter.calcPeriodRelativeTimeFromMpdRelativeTime(representation, availabilityWindow.start),
-            end: timelineConverter.calcPeriodRelativeTimeFromMpdRelativeTime(representation, availabilityWindow.end)
-        };
-        var currentSegmentList = representation.segments;
-        var availabilityLowerLimit = 2 * duration;
-        var availabilityUpperLimit = Math.max(2 * minBufferTime, 10 * duration);
-
-        var originAvailabilityTime = NaN;
-        var originSegment = null;
-
-        var start, end, range;
-
-        if (!periodRelativeRange) {
-            periodRelativeRange = timelineConverter.calcSegmentAvailabilityRange(representation, isDynamic);
-        }
-
-        periodRelativeRange.start = Math.max(periodRelativeRange.start, 0);
-
-        if (isDynamic && !timelineConverter.isTimeSyncCompleted()) {
-            start = Math.floor(periodRelativeRange.start / duration);
-            end = Math.floor(periodRelativeRange.end / duration);
-            range = { start: start, end: end };
-            return range;
-        }
-
-        // if segments exist we should try to find the latest buffered time, which is the presentation time of the
-        // segment for the current index
-        if (currentSegmentList && currentSegmentList.length > 0) {
-            originSegment = getSegmentByIndex(index, representation);
-            originAvailabilityTime = originSegment ? timelineConverter.calcPeriodRelativeTimeFromMpdRelativeTime(representation, originSegment.presentationStartTime) : index > 0 ? index * duration : timelineConverter.calcPeriodRelativeTimeFromMpdRelativeTime(representation, requestedTime || currentSegmentList[0].presentationStartTime);
-        } else {
-            // If no segments exist, but index > 0, it means that we switch to the other representation, so
-            // we should proceed from this time.
-            // Otherwise we should start from the beginning for static mpds or from the end (live edge) for dynamic mpds
-            originAvailabilityTime = index > 0 ? index * duration : isDynamic ? periodRelativeRange.end : periodRelativeRange.start;
-        }
-
-        // segment list should not be out of the availability window range
-        start = Math.floor(Math.max(originAvailabilityTime - availabilityLowerLimit, periodRelativeRange.start) / duration);
-        end = Math.floor(Math.min(start + availabilityUpperLimit / duration, periodRelativeRange.end / duration));
-
-        range = { start: start, end: end };
-
-        return range;
-    }
-
-    function decideSegmentListRangeForTimeline() /*representation*/{
-        var availabilityLowerLimit = 2;
-        var availabilityUpperLimit = 10;
-        var firstIdx = 0;
-        var lastIdx = Number.POSITIVE_INFINITY;
-
-        var start, end, range;
-
-        if (isDynamic && !timelineConverter.isTimeSyncCompleted()) {
-            range = { start: firstIdx, end: lastIdx };
-            return range;
-        }
-
-        if (!isDynamic && requestedTime || index < 0) return null;
-
-        // segment list should not be out of the availability window range
-        start = Math.max(index - availabilityLowerLimit, firstIdx);
-        end = Math.min(index + availabilityUpperLimit, lastIdx);
-
-        range = { start: start, end: end };
-
-        return range;
-    }
-
-    function getTimeBasedSegment(representation, time, duration, fTimescale, url, range, index) {
-        var scaledTime = time / fTimescale;
-        var scaledDuration = Math.min(duration / fTimescale, representation.adaptation.period.mpd.maxSegmentDuration);
-
-        var presentationStartTime, presentationEndTime, seg;
-
-        presentationStartTime = timelineConverter.calcPresentationTimeFromMediaTime(scaledTime, representation);
-        presentationEndTime = presentationStartTime + scaledDuration;
-
-        seg = new _voSegmentJs2['default']();
-
-        seg.representation = representation;
-        seg.duration = scaledDuration;
-        seg.mediaStartTime = scaledTime;
-
-        seg.presentationStartTime = presentationStartTime;
-
-        // For SegmentTimeline every segment is available at loadedTime
-        seg.availabilityStartTime = representation.adaptation.period.mpd.manifest.loadedTime;
-        seg.availabilityEndTime = timelineConverter.calcAvailabilityEndTimeFromPresentationTime(presentationEndTime, representation.adaptation.period.mpd, isDynamic);
-
-        // at this wall clock time, the video element currentTime should be seg.presentationStartTime
-        seg.wallStartTime = timelineConverter.calcWallTimeForSegment(seg, isDynamic);
-
-        seg.replacementTime = time;
-
-        seg.replacementNumber = getNumberForSegment(seg, index);
-
-        url = replaceTokenForTemplate(url, 'Number', seg.replacementNumber);
-        url = replaceTokenForTemplate(url, 'Time', seg.replacementTime);
-        seg.media = url;
-        seg.mediaRange = range;
-        seg.availabilityIdx = index;
-
-        return seg;
-    }
-
-    function getSegmentsFromList(representation) {
-        var list = representation.adaptation.period.mpd.manifest.Period_asArray[representation.adaptation.period.index].AdaptationSet_asArray[representation.adaptation.index].Representation_asArray[representation.index].SegmentList;
-        var baseURL = representation.adaptation.period.mpd.manifest.Period_asArray[representation.adaptation.period.index].AdaptationSet_asArray[representation.adaptation.index].Representation_asArray[representation.index].BaseURL;
-        var len = list.SegmentURL_asArray.length;
-
-        var segments = [];
-
-        var periodSegIdx, seg, s, range, startIdx, endIdx, start;
-
-        start = representation.startNumber;
-
-        range = decideSegmentListRangeForTemplate(representation);
-        startIdx = Math.max(range.start, 0);
-        endIdx = Math.min(range.end, list.SegmentURL_asArray.length - 1);
-
-        for (periodSegIdx = startIdx; periodSegIdx <= endIdx; periodSegIdx++) {
-            s = list.SegmentURL_asArray[periodSegIdx];
-
-            seg = getIndexBasedSegment(representation, periodSegIdx);
-            seg.replacementTime = (start + periodSegIdx - 1) * representation.segmentDuration;
-            seg.media = s.media ? s.media : baseURL;
-            seg.mediaRange = s.mediaRange;
-            seg.index = s.index;
-            seg.indexRange = s.indexRange;
-
-            segments.push(seg);
-            seg = null;
-        }
-
-        representation.availableSegmentsNumber = len;
-
-        return segments;
-    }
-
-    function getSegments(representation) {
-        var segments;
-        var type = representation.segmentInfoType;
-
-        // Already figure out the segments.
-        if (type === 'SegmentBase' || type === 'BaseURL' || !isSegmentListUpdateRequired(representation)) {
-            segments = representation.segments;
-        } else {
-            if (type === 'SegmentTimeline') {
-                segments = getSegmentsFromTimeline(representation);
-            } else if (type === 'SegmentTemplate') {
-                segments = getSegmentsFromTemplate(representation);
-            } else if (type === 'SegmentList') {
-                segments = getSegmentsFromList(representation);
-            }
-
-            onSegmentListUpdated(representation, segments);
-        }
-
-        return segments;
+    function updateSegments(representation) {
+        return segmentsGetter.getSegments(representation, requestedTime, index, onSegmentListUpdated);
     }
 
     function onSegmentListUpdated(representation, segments) {
         var lastIdx, liveEdge, metrics, lastSegment;
 
         representation.segments = segments;
+        if (!initialSegmentList) {
+            initialSegmentList = segments;
+        }
+
         lastIdx = segments.length - 1;
         if (isDynamic && isNaN(timelineConverter.getExpectedLiveEdge())) {
             lastSegment = segments[lastIdx];
@@ -4444,7 +4024,7 @@ function DashHandler(config) {
 
         representation.segments = null;
 
-        getSegments(representation);
+        updateSegments(representation);
 
         return representation;
     }
@@ -4509,47 +4089,6 @@ function DashHandler(config) {
         return idx;
     }
 
-    function getSegmentByIndex(index, representation) {
-        if (!representation || !representation.segments) return null;
-
-        var ln = representation.segments.length;
-        var seg, i;
-
-        if (index < ln) {
-            seg = representation.segments[index];
-            if (seg && seg.availabilityIdx === index) {
-                return seg;
-            }
-        }
-
-        for (i = 0; i < ln; i++) {
-            seg = representation.segments[i];
-
-            if (seg && seg.availabilityIdx === index) {
-                return seg;
-            }
-        }
-
-        return null;
-    }
-
-    function isSegmentListUpdateRequired(representation) {
-        var segments = representation.segments;
-        var updateRequired = false;
-
-        var upperIdx, lowerIdx;
-
-        if (!segments || segments.length === 0) {
-            updateRequired = true;
-        } else {
-            lowerIdx = segments[0].availabilityIdx;
-            upperIdx = segments[segments.length - 1].availabilityIdx;
-            updateRequired = index < lowerIdx || index > upperIdx;
-        }
-
-        return updateRequired;
-    }
-
     function getRequestForSegment(segment) {
         if (segment === null || segment === undefined) {
             return null;
@@ -4561,9 +4100,9 @@ function DashHandler(config) {
         var url;
 
         url = getRequestUrl(segment.media, representation);
-        url = replaceTokenForTemplate(url, 'Number', segment.replacementNumber);
-        url = replaceTokenForTemplate(url, 'Time', segment.replacementTime);
-        url = replaceTokenForTemplate(url, 'Bandwidth', bandwidth);
+        url = (0, _utilsSegmentsUtilsJs.replaceTokenForTemplate)(url, 'Number', segment.replacementNumber);
+        url = (0, _utilsSegmentsUtilsJs.replaceTokenForTemplate)(url, 'Time', segment.replacementTime);
+        url = (0, _utilsSegmentsUtilsJs.replaceTokenForTemplate)(url, 'Bandwidth', bandwidth);
         url = replaceIDForTemplate(url, representation.id);
         url = unescapeDollarsInTemplate(url);
 
@@ -4606,7 +4145,7 @@ function DashHandler(config) {
 
         index = getIndexForSegments(time, representation, timeThreshold);
         //Index may be -1 if getSegments needs to update.  So after getSegments is called and updated then try to get index again.
-        getSegments(representation);
+        updateSegments(representation);
         if (index < 0) {
             index = getIndexForSegments(time, representation, timeThreshold);
         }
@@ -4624,7 +4163,7 @@ function DashHandler(config) {
             request.mediaInfo = streamProcessor.getMediaInfo();
             log('Signal complete.', request);
         } else {
-            segment = getSegmentByIndex(index, representation);
+            segment = (0, _utilsSegmentsUtilsJs.getSegmentByIndex)(index, representation);
             request = getRequestForSegment(segment);
         }
 
@@ -4664,8 +4203,8 @@ function DashHandler(config) {
             request.mediaInfo = streamProcessor.getMediaInfo();
             log('Signal complete.');
         } else {
-            getSegments(representation);
-            segment = getSegmentByIndex(index, representation);
+            updateSegments(representation);
+            segment = (0, _utilsSegmentsUtilsJs.getSegmentByIndex)(index, representation);
             request = getRequestForSegment(segment);
             if (!segment && isDynamic) {
                 /*
@@ -4702,7 +4241,7 @@ function DashHandler(config) {
         for (i = 0, len = fragments.length; i < len; i++) {
             s = fragments[i];
 
-            seg = getTimeBasedSegment(representation, s.startTime, s.duration, s.timescale, s.media, s.mediaRange, count);
+            seg = (0, _utilsSegmentsUtilsJs.getTimeBasedSegment)(timelineConverter, isDynamic, representation, s.startTime, s.duration, s.timescale, s.media, s.mediaRange, count);
 
             segments.push(seg);
             seg = null;
@@ -4730,6 +4269,7 @@ function DashHandler(config) {
         setCurrentTime: setCurrentTime,
         getCurrentTime: getCurrentTime,
         getCurrentIndex: getCurrentIndex,
+        getInitialSegmentList: getInitialSegmentList,
         reset: reset
     };
 
@@ -4744,7 +4284,7 @@ factory.SEGMENTS_UNAVAILABLE_ERROR_CODE = SEGMENTS_UNAVAILABLE_ERROR_CODE;
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../core/Debug.js":7,"../core/EventBus.js":8,"../core/FactoryMaker.js":9,"../core/events/Events.js":11,"../streaming/vo/Error.js":136,"../streaming/vo/FragmentRequest.js":137,"../streaming/vo/metrics/HTTPRequest.js":153,"./vo/Segment.js":28}],15:[function(_dereq_,module,exports){
+},{"../core/Debug.js":7,"../core/EventBus.js":8,"../core/FactoryMaker.js":9,"../core/events/Events.js":11,"../streaming/vo/Error.js":141,"../streaming/vo/FragmentRequest.js":142,"../streaming/vo/metrics/HTTPRequest.js":158,"./utils/SegmentsGetter.js":22,"./utils/SegmentsUtils.js":23}],15:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -5248,7 +4788,7 @@ DashMetrics.__dashjs_factory_name = 'DashMetrics';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(DashMetrics);
 module.exports = exports['default'];
 
-},{"../core/FactoryMaker.js":9,"../streaming/controllers/AbrController.js":43,"../streaming/models/ManifestModel.js":80,"../streaming/vo/metrics/HTTPRequest.js":153,"./models/DashManifestModel.js":19}],16:[function(_dereq_,module,exports){
+},{"../core/FactoryMaker.js":9,"../streaming/controllers/AbrController.js":48,"../streaming/models/ManifestModel.js":85,"../streaming/vo/metrics/HTTPRequest.js":158,"./models/DashManifestModel.js":19}],16:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -5657,7 +5197,7 @@ DashParser.__dashjs_factory_name = 'DashParser';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(DashParser);
 module.exports = exports['default'];
 
-},{"../../externals/objectiron.js":3,"../../externals/xml2json.js":4,"../core/Debug.js":7,"../core/FactoryMaker.js":9,"../streaming/utils/ErrorHandler.js":127}],17:[function(_dereq_,module,exports){
+},{"../../externals/objectiron.js":3,"../../externals/xml2json.js":4,"../core/Debug.js":7,"../core/FactoryMaker.js":9,"../streaming/utils/ErrorHandler.js":132}],17:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -5994,7 +5534,7 @@ SegmentBaseLoader.__dashjs_factory_name = 'SegmentBaseLoader';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(SegmentBaseLoader);
 module.exports = exports['default'];
 
-},{"../core/Debug.js":7,"../core/EventBus.js":8,"../core/FactoryMaker.js":9,"../core/events/Events.js":11,"../streaming/utils/BoxParser.js":123,"../streaming/utils/ErrorHandler.js":127,"../streaming/utils/RequestModifier.js":130,"../streaming/vo/Error.js":136,"./vo/Segment.js":28}],18:[function(_dereq_,module,exports){
+},{"../core/Debug.js":7,"../core/EventBus.js":8,"../core/FactoryMaker.js":9,"../core/events/Events.js":11,"../streaming/utils/BoxParser.js":128,"../streaming/utils/ErrorHandler.js":132,"../streaming/utils/RequestModifier.js":135,"../streaming/vo/Error.js":141,"./vo/Segment.js":33}],18:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -6328,7 +5868,8 @@ function RepresentationController() {
         if (r.adaptation.period.mpd.manifest.type == 'dynamic') {
             var segmentAvailabilityTimePeriod = r.segmentAvailabilityRange.end - r.segmentAvailabilityRange.start;
             // We must put things to sleep unless till e.g. the startTime calculation in ScheduleController.onLiveEdgeSearchCompleted fall after the segmentAvailabilityRange.start
-            postponeTimePeriod = (currentRepresentation.segmentDuration * mediaPlayerModel.getLiveDelayFragmentCount() - segmentAvailabilityTimePeriod) * 1000;
+            var liveDelay = mediaPlayerModel.getLiveDelay() || currentRepresentation.segmentDuration * mediaPlayerModel.getLiveDelayFragmentCount();
+            postponeTimePeriod = (liveDelay - segmentAvailabilityTimePeriod) * 1000;
         }
 
         if (postponeTimePeriod > 0) {
@@ -6430,7 +5971,7 @@ RepresentationController.__dashjs_factory_name = 'RepresentationController';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(RepresentationController);
 module.exports = exports['default'];
 
-},{"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../../streaming/controllers/AbrController.js":43,"../../streaming/controllers/PlaybackController.js":49,"../../streaming/controllers/StreamController.js":52,"../../streaming/models/ManifestModel.js":80,"../../streaming/models/MediaPlayerModel.js":81,"../../streaming/models/MetricsModel.js":82,"../../streaming/utils/DOMStorage.js":126,"../../streaming/vo/Error.js":136,"../DashMetrics.js":15,"../models/DashManifestModel.js":19,"../utils/TimelineConverter.js":21}],19:[function(_dereq_,module,exports){
+},{"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../../streaming/controllers/AbrController.js":48,"../../streaming/controllers/PlaybackController.js":54,"../../streaming/controllers/StreamController.js":57,"../../streaming/models/ManifestModel.js":85,"../../streaming/models/MediaPlayerModel.js":86,"../../streaming/models/MetricsModel.js":87,"../../streaming/utils/DOMStorage.js":131,"../../streaming/vo/Error.js":141,"../DashMetrics.js":15,"../models/DashManifestModel.js":19,"../utils/TimelineConverter.js":25}],19:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -7274,7 +6815,7 @@ DashManifestModel.__dashjs_factory_name = 'DashManifestModel';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(DashManifestModel);
 module.exports = exports['default'];
 
-},{"../../core/FactoryMaker.js":9,"../utils/TimelineConverter.js":21,"../vo/AdaptationSet.js":22,"../vo/Event.js":23,"../vo/EventStream.js":24,"../vo/Mpd.js":25,"../vo/Period.js":26,"../vo/Representation.js":27,"../vo/UTCTiming.js":29}],20:[function(_dereq_,module,exports){
+},{"../../core/FactoryMaker.js":9,"../utils/TimelineConverter.js":25,"../vo/AdaptationSet.js":27,"../vo/Event.js":28,"../vo/EventStream.js":29,"../vo/Mpd.js":30,"../vo/Period.js":31,"../vo/Representation.js":32,"../vo/UTCTiming.js":34}],20:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -7386,6 +6927,639 @@ exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(Fragmen
 module.exports = exports['default'];
 
 },{"../../core/FactoryMaker.js":9}],21:[function(_dereq_,module,exports){
+/**
+ * The copyright in this software is being made available under the BSD License,
+ * included below. This software may be subject to other third party and contributor
+ * rights, including patent rights, and no such rights are granted under this license.
+ *
+ * Copyright (c) 2013, Dash Industry Forum.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ *  * Redistributions of source code must retain the above copyright notice, this
+ *  list of conditions and the following disclaimer.
+ *  * Redistributions in binary form must reproduce the above copyright notice,
+ *  this list of conditions and the following disclaimer in the documentation and/or
+ *  other materials provided with the distribution.
+ *  * Neither the name of Dash Industry Forum nor the names of its
+ *  contributors may be used to endorse or promote products derived from this software
+ *  without specific prior written permission.
+ *
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS AS IS AND ANY
+ *  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ *  WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ *  IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ *  INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ *  NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ *  PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ *  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ *  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ *  POSSIBILITY OF SUCH DAMAGE.
+ */
+
+'use strict';
+
+Object.defineProperty(exports, '__esModule', {
+    value: true
+});
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _coreFactoryMakerJs = _dereq_('../../core/FactoryMaker.js');
+
+var _coreFactoryMakerJs2 = _interopRequireDefault(_coreFactoryMakerJs);
+
+var _SegmentsUtilsJs = _dereq_('./SegmentsUtils.js');
+
+function ListSegmentsGetter(config, isDynamic) {
+
+    var timelineConverter = config.timelineConverter;
+
+    var instance = undefined;
+
+    function getSegmentsFromList(representation, requestedTime, index, availabilityUpperLimit) {
+        var list = representation.adaptation.period.mpd.manifest.Period_asArray[representation.adaptation.period.index].AdaptationSet_asArray[representation.adaptation.index].Representation_asArray[representation.index].SegmentList;
+        var baseURL = representation.adaptation.period.mpd.manifest.Period_asArray[representation.adaptation.period.index].AdaptationSet_asArray[representation.adaptation.index].Representation_asArray[representation.index].BaseURL;
+        var len = list.SegmentURL_asArray.length;
+
+        var segments = [];
+
+        var periodSegIdx, seg, s, range, startIdx, endIdx, start;
+
+        start = representation.startNumber;
+
+        range = (0, _SegmentsUtilsJs.decideSegmentListRangeForTemplate)(timelineConverter, isDynamic, representation, requestedTime, index, availabilityUpperLimit);
+        startIdx = Math.max(range.start, 0);
+        endIdx = Math.min(range.end, list.SegmentURL_asArray.length - 1);
+
+        for (periodSegIdx = startIdx; periodSegIdx <= endIdx; periodSegIdx++) {
+            s = list.SegmentURL_asArray[periodSegIdx];
+
+            seg = (0, _SegmentsUtilsJs.getIndexBasedSegment)(timelineConverter, isDynamic, representation, periodSegIdx);
+            seg.replacementTime = (start + periodSegIdx - 1) * representation.segmentDuration;
+            seg.media = s.media ? s.media : baseURL;
+            seg.mediaRange = s.mediaRange;
+            seg.index = s.index;
+            seg.indexRange = s.indexRange;
+
+            segments.push(seg);
+            seg = null;
+        }
+
+        representation.availableSegmentsNumber = len;
+
+        return segments;
+    }
+
+    instance = {
+        getSegments: getSegmentsFromList
+    };
+
+    return instance;
+}
+
+ListSegmentsGetter.__dashjs_factory_name = 'ListSegmentsGetter';
+var factory = _coreFactoryMakerJs2['default'].getClassFactory(ListSegmentsGetter);
+exports['default'] = factory;
+module.exports = exports['default'];
+
+},{"../../core/FactoryMaker.js":9,"./SegmentsUtils.js":23}],22:[function(_dereq_,module,exports){
+/**
+ * The copyright in this software is being made available under the BSD License,
+ * included below. This software may be subject to other third party and contributor
+ * rights, including patent rights, and no such rights are granted under this license.
+ *
+ * Copyright (c) 2013, Dash Industry Forum.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ *  * Redistributions of source code must retain the above copyright notice, this
+ *  list of conditions and the following disclaimer.
+ *  * Redistributions in binary form must reproduce the above copyright notice,
+ *  this list of conditions and the following disclaimer in the documentation and/or
+ *  other materials provided with the distribution.
+ *  * Neither the name of Dash Industry Forum nor the names of its
+ *  contributors may be used to endorse or promote products derived from this software
+ *  without specific prior written permission.
+ *
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS AS IS AND ANY
+ *  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ *  WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ *  IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ *  INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ *  NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ *  PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ *  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ *  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ *  POSSIBILITY OF SUCH DAMAGE.
+ */
+
+'use strict';
+
+Object.defineProperty(exports, '__esModule', {
+    value: true
+});
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _coreFactoryMakerJs = _dereq_('../../core/FactoryMaker.js');
+
+var _coreFactoryMakerJs2 = _interopRequireDefault(_coreFactoryMakerJs);
+
+var _TimelineSegmentsGetterJs = _dereq_('./TimelineSegmentsGetter.js');
+
+var _TimelineSegmentsGetterJs2 = _interopRequireDefault(_TimelineSegmentsGetterJs);
+
+var _TemplateSegmentsGetterJs = _dereq_('./TemplateSegmentsGetter.js');
+
+var _TemplateSegmentsGetterJs2 = _interopRequireDefault(_TemplateSegmentsGetterJs);
+
+var _ListSegmentsGetterJs = _dereq_('./ListSegmentsGetter.js');
+
+var _ListSegmentsGetterJs2 = _interopRequireDefault(_ListSegmentsGetterJs);
+
+function SegmentsGetter(config, isDynamic) {
+
+    var context = this.context;
+
+    var instance = undefined,
+        timelineSegmentsGetter = undefined,
+        templateSegmentsGetter = undefined,
+        listSegmentsGetter = undefined;
+
+    function setup() {
+        timelineSegmentsGetter = (0, _TimelineSegmentsGetterJs2['default'])(context).create(config, isDynamic);
+        templateSegmentsGetter = (0, _TemplateSegmentsGetterJs2['default'])(context).create(config, isDynamic);
+        listSegmentsGetter = (0, _ListSegmentsGetterJs2['default'])(context).create(config, isDynamic);
+    }
+
+    function getSegments(representation, requestedTime, index, onSegmentListUpdatedCallback, availabilityUpperLimit) {
+        var segments;
+        var type = representation.segmentInfoType;
+
+        // Already figure out the segments.
+        if (type === 'SegmentBase' || type === 'BaseURL' || !isSegmentListUpdateRequired(representation, index)) {
+            segments = representation.segments;
+        } else {
+            if (type === 'SegmentTimeline') {
+                segments = timelineSegmentsGetter.getSegments(representation, requestedTime, index, availabilityUpperLimit);
+            } else if (type === 'SegmentTemplate') {
+                segments = templateSegmentsGetter.getSegments(representation, requestedTime, index, availabilityUpperLimit);
+            } else if (type === 'SegmentList') {
+                segments = listSegmentsGetter.getSegments(representation, requestedTime, index, availabilityUpperLimit);
+            }
+
+            if (onSegmentListUpdatedCallback) {
+                onSegmentListUpdatedCallback(representation, segments);
+            }
+        }
+
+        return segments;
+    }
+
+    function isSegmentListUpdateRequired(representation, index) {
+        var segments = representation.segments;
+        var updateRequired = false;
+
+        var upperIdx, lowerIdx;
+
+        if (!segments || segments.length === 0) {
+            updateRequired = true;
+        } else {
+            lowerIdx = segments[0].availabilityIdx;
+            upperIdx = segments[segments.length - 1].availabilityIdx;
+            updateRequired = index < lowerIdx || index > upperIdx;
+        }
+
+        return updateRequired;
+    }
+
+    instance = {
+        getSegments: getSegments
+    };
+
+    setup();
+
+    return instance;
+}
+
+SegmentsGetter.__dashjs_factory_name = 'SegmentsGetter';
+var factory = _coreFactoryMakerJs2['default'].getClassFactory(SegmentsGetter);
+exports['default'] = factory;
+module.exports = exports['default'];
+
+},{"../../core/FactoryMaker.js":9,"./ListSegmentsGetter.js":21,"./TemplateSegmentsGetter.js":24,"./TimelineSegmentsGetter.js":26}],23:[function(_dereq_,module,exports){
+/**
+ * The copyright in this software is being made available under the BSD License,
+ * included below. This software may be subject to other third party and contributor
+ * rights, including patent rights, and no such rights are granted under this license.
+ *
+ * Copyright (c) 2013, Dash Industry Forum.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ *  * Redistributions of source code must retain the above copyright notice, this
+ *  list of conditions and the following disclaimer.
+ *  * Redistributions in binary form must reproduce the above copyright notice,
+ *  this list of conditions and the following disclaimer in the documentation and/or
+ *  other materials provided with the distribution.
+ *  * Neither the name of Dash Industry Forum nor the names of its
+ *  contributors may be used to endorse or promote products derived from this software
+ *  without specific prior written permission.
+ *
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS AS IS AND ANY
+ *  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ *  WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ *  IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ *  INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ *  NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ *  PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ *  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ *  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ *  POSSIBILITY OF SUCH DAMAGE.
+ */
+
+'use strict';
+
+Object.defineProperty(exports, '__esModule', {
+    value: true
+});
+exports.replaceTokenForTemplate = replaceTokenForTemplate;
+exports.getIndexBasedSegment = getIndexBasedSegment;
+exports.getTimeBasedSegment = getTimeBasedSegment;
+exports.getSegmentByIndex = getSegmentByIndex;
+exports.decideSegmentListRangeForTimeline = decideSegmentListRangeForTimeline;
+exports.decideSegmentListRangeForTemplate = decideSegmentListRangeForTemplate;
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _voSegmentJs = _dereq_('./../vo/Segment.js');
+
+var _voSegmentJs2 = _interopRequireDefault(_voSegmentJs);
+
+function zeroPadToLength(numStr, minStrLength) {
+    while (numStr.length < minStrLength) {
+        numStr = '0' + numStr;
+    }
+    return numStr;
+}
+
+function getNumberForSegment(segment, segmentIndex) {
+    return segment.representation.startNumber + segmentIndex;
+}
+
+function replaceTokenForTemplate(url, token, value) {
+    var formatTag = '%0';
+
+    var startPos, endPos, formatTagPos, specifier, width, paddedValue;
+
+    var tokenLen = token.length;
+    var formatTagLen = formatTag.length;
+
+    // keep looping round until all instances of <token> have been
+    // replaced. once that has happened, startPos below will be -1
+    // and the completed url will be returned.
+    while (true) {
+
+        // check if there is a valid $<token>...$ identifier
+        // if not, return the url as is.
+        startPos = url.indexOf('$' + token);
+        if (startPos < 0) {
+            return url;
+        }
+
+        // the next '$' must be the end of the identifier
+        // if there isn't one, return the url as is.
+        endPos = url.indexOf('$', startPos + tokenLen);
+        if (endPos < 0) {
+            return url;
+        }
+
+        // now see if there is an additional format tag suffixed to
+        // the identifier within the enclosing '$' characters
+        formatTagPos = url.indexOf(formatTag, startPos + tokenLen);
+        if (formatTagPos > startPos && formatTagPos < endPos) {
+
+            specifier = url.charAt(endPos - 1);
+            width = parseInt(url.substring(formatTagPos + formatTagLen, endPos - 1), 10);
+
+            // support the minimum specifiers required by IEEE 1003.1
+            // (d, i , o, u, x, and X) for completeness
+            switch (specifier) {
+                // treat all int types as uint,
+                // hence deliberate fallthrough
+                case 'd':
+                case 'i':
+                case 'u':
+                    paddedValue = zeroPadToLength(value.toString(), width);
+                    break;
+                case 'x':
+                    paddedValue = zeroPadToLength(value.toString(16), width);
+                    break;
+                case 'X':
+                    paddedValue = zeroPadToLength(value.toString(16), width).toUpperCase();
+                    break;
+                case 'o':
+                    paddedValue = zeroPadToLength(value.toString(8), width);
+                    break;
+                default:
+                    //TODO: commented out logging to supress jshint warning -- `log` is undefined here
+                    //log('Unsupported/invalid IEEE 1003.1 format identifier string in URL');
+                    return url;
+            }
+        } else {
+            paddedValue = value;
+        }
+
+        url = url.substring(0, startPos) + paddedValue + url.substring(endPos + 1);
+    }
+}
+
+function getIndexBasedSegment(timelineConverter, isDynamic, representation, index) {
+    var seg, duration, presentationStartTime, presentationEndTime;
+
+    duration = representation.segmentDuration;
+
+    /*
+     * From spec - If neither @duration attribute nor SegmentTimeline element is present, then the Representation
+     * shall contain exactly one Media Segment. The MPD start time is 0 and the MPD duration is obtained
+     * in the same way as for the last Media Segment in the Representation.
+     */
+    if (isNaN(duration)) {
+        duration = representation.adaptation.period.duration;
+    }
+
+    presentationStartTime = representation.adaptation.period.start + index * duration;
+    presentationEndTime = presentationStartTime + duration;
+
+    seg = new _voSegmentJs2['default']();
+
+    seg.representation = representation;
+    seg.duration = duration;
+    seg.presentationStartTime = presentationStartTime;
+
+    seg.mediaStartTime = timelineConverter.calcMediaTimeFromPresentationTime(seg.presentationStartTime, representation);
+
+    seg.availabilityStartTime = timelineConverter.calcAvailabilityStartTimeFromPresentationTime(seg.presentationStartTime, representation.adaptation.period.mpd, isDynamic);
+    seg.availabilityEndTime = timelineConverter.calcAvailabilityEndTimeFromPresentationTime(presentationEndTime, representation.adaptation.period.mpd, isDynamic);
+
+    // at this wall clock time, the video element currentTime should be seg.presentationStartTime
+    seg.wallStartTime = timelineConverter.calcWallTimeForSegment(seg, isDynamic);
+
+    seg.replacementNumber = getNumberForSegment(seg, index);
+    seg.availabilityIdx = index;
+
+    return seg;
+}
+
+function getTimeBasedSegment(timelineConverter, isDynamic, representation, time, duration, fTimescale, url, range, index) {
+    var scaledTime = time / fTimescale;
+    var scaledDuration = Math.min(duration / fTimescale, representation.adaptation.period.mpd.maxSegmentDuration);
+
+    var presentationStartTime, presentationEndTime, seg;
+
+    presentationStartTime = timelineConverter.calcPresentationTimeFromMediaTime(scaledTime, representation);
+    presentationEndTime = presentationStartTime + scaledDuration;
+
+    seg = new _voSegmentJs2['default']();
+
+    seg.representation = representation;
+    seg.duration = scaledDuration;
+    seg.mediaStartTime = scaledTime;
+
+    seg.presentationStartTime = presentationStartTime;
+
+    // For SegmentTimeline every segment is available at loadedTime
+    seg.availabilityStartTime = representation.adaptation.period.mpd.manifest.loadedTime;
+    seg.availabilityEndTime = timelineConverter.calcAvailabilityEndTimeFromPresentationTime(presentationEndTime, representation.adaptation.period.mpd, isDynamic);
+
+    // at this wall clock time, the video element currentTime should be seg.presentationStartTime
+    seg.wallStartTime = timelineConverter.calcWallTimeForSegment(seg, isDynamic);
+
+    seg.replacementTime = time;
+
+    seg.replacementNumber = getNumberForSegment(seg, index);
+
+    url = replaceTokenForTemplate(url, 'Number', seg.replacementNumber);
+    url = replaceTokenForTemplate(url, 'Time', seg.replacementTime);
+    seg.media = url;
+    seg.mediaRange = range;
+    seg.availabilityIdx = index;
+
+    return seg;
+}
+
+function getSegmentByIndex(index, representation) {
+    if (!representation || !representation.segments) return null;
+
+    var ln = representation.segments.length;
+    var seg, i;
+
+    if (index < ln) {
+        seg = representation.segments[index];
+        if (seg && seg.availabilityIdx === index) {
+            return seg;
+        }
+    }
+
+    for (i = 0; i < ln; i++) {
+        seg = representation.segments[i];
+
+        if (seg && seg.availabilityIdx === index) {
+            return seg;
+        }
+    }
+
+    return null;
+}
+
+function decideSegmentListRangeForTimeline(timelineConverter, isDynamic, requestedTime, index, givenAvailabilityUpperLimit) {
+    var availabilityLowerLimit = 2;
+    var availabilityUpperLimit = givenAvailabilityUpperLimit || 10;
+    var firstIdx = 0;
+    var lastIdx = Number.POSITIVE_INFINITY;
+
+    var start, end, range;
+
+    if (isDynamic && !timelineConverter.isTimeSyncCompleted()) {
+        range = { start: firstIdx, end: lastIdx };
+        return range;
+    }
+
+    if (!isDynamic && requestedTime || index < 0) return null;
+
+    // segment list should not be out of the availability window range
+    start = Math.max(index - availabilityLowerLimit, firstIdx);
+    end = Math.min(index + availabilityUpperLimit, lastIdx);
+
+    range = { start: start, end: end };
+
+    return range;
+}
+
+function decideSegmentListRangeForTemplate(timelineConverter, isDynamic, representation, requestedTime, index, givenAvailabilityUpperLimit) {
+    var duration = representation.segmentDuration;
+    var minBufferTime = representation.adaptation.period.mpd.manifest.minBufferTime;
+    var availabilityWindow = representation.segmentAvailabilityRange;
+    var periodRelativeRange = {
+        start: timelineConverter.calcPeriodRelativeTimeFromMpdRelativeTime(representation, availabilityWindow.start),
+        end: timelineConverter.calcPeriodRelativeTimeFromMpdRelativeTime(representation, availabilityWindow.end)
+    };
+    var currentSegmentList = representation.segments;
+    var availabilityLowerLimit = 2 * duration;
+    var availabilityUpperLimit = givenAvailabilityUpperLimit || Math.max(2 * minBufferTime, 10 * duration);
+
+    var originAvailabilityTime = NaN;
+    var originSegment = null;
+
+    var start, end, range;
+
+    periodRelativeRange.start = Math.max(periodRelativeRange.start, 0);
+
+    if (isDynamic && !timelineConverter.isTimeSyncCompleted()) {
+        start = Math.floor(periodRelativeRange.start / duration);
+        end = Math.floor(periodRelativeRange.end / duration);
+        range = { start: start, end: end };
+        return range;
+    }
+
+    // if segments exist we should try to find the latest buffered time, which is the presentation time of the
+    // segment for the current index
+    if (currentSegmentList && currentSegmentList.length > 0) {
+        originSegment = getSegmentByIndex(index, representation);
+        if (originSegment) {
+            originAvailabilityTime = timelineConverter.calcPeriodRelativeTimeFromMpdRelativeTime(representation, originSegment.presentationStartTime);
+        } else {
+            originAvailabilityTime = index > 0 ? index * duration : timelineConverter.calcPeriodRelativeTimeFromMpdRelativeTime(representation, requestedTime);
+        }
+    } else {
+        // If no segments exist, but index > 0, it means that we switch to the other representation, so
+        // we should proceed from this time.
+        // Otherwise we should start from the beginning for static mpds or from the end (live edge) for dynamic mpds
+        originAvailabilityTime = index > 0 ? index * duration : isDynamic ? periodRelativeRange.end : periodRelativeRange.start;
+    }
+
+    // segment list should not be out of the availability window range
+    start = Math.floor(Math.max(originAvailabilityTime - availabilityLowerLimit, periodRelativeRange.start) / duration);
+    end = Math.floor(Math.min(start + availabilityUpperLimit / duration, periodRelativeRange.end / duration));
+
+    range = { start: start, end: end };
+
+    return range;
+}
+
+},{"./../vo/Segment.js":33}],24:[function(_dereq_,module,exports){
+/**
+ * The copyright in this software is being made available under the BSD License,
+ * included below. This software may be subject to other third party and contributor
+ * rights, including patent rights, and no such rights are granted under this license.
+ *
+ * Copyright (c) 2013, Dash Industry Forum.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ *  * Redistributions of source code must retain the above copyright notice, this
+ *  list of conditions and the following disclaimer.
+ *  * Redistributions in binary form must reproduce the above copyright notice,
+ *  this list of conditions and the following disclaimer in the documentation and/or
+ *  other materials provided with the distribution.
+ *  * Neither the name of Dash Industry Forum nor the names of its
+ *  contributors may be used to endorse or promote products derived from this software
+ *  without specific prior written permission.
+ *
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS AS IS AND ANY
+ *  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ *  WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ *  IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ *  INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ *  NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ *  PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ *  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ *  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ *  POSSIBILITY OF SUCH DAMAGE.
+ */
+
+'use strict';
+
+Object.defineProperty(exports, '__esModule', {
+    value: true
+});
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _coreFactoryMakerJs = _dereq_('../../core/FactoryMaker.js');
+
+var _coreFactoryMakerJs2 = _interopRequireDefault(_coreFactoryMakerJs);
+
+var _SegmentsUtilsJs = _dereq_('./SegmentsUtils.js');
+
+function TemplateSegmentsGetter(config, isDynamic) {
+
+    var timelineConverter = config.timelineConverter;
+
+    var instance = undefined;
+
+    function getSegmentsFromTemplate(representation, requestedTime, index, availabilityUpperLimit) {
+        var template = representation.adaptation.period.mpd.manifest.Period_asArray[representation.adaptation.period.index].AdaptationSet_asArray[representation.adaptation.index].Representation_asArray[representation.index].SegmentTemplate;
+        var duration = representation.segmentDuration;
+        var availabilityWindow = representation.segmentAvailabilityRange;
+
+        var segments = [];
+        var url = null;
+        var seg = null;
+
+        var segmentRange, periodSegIdx, startIdx, endIdx, start;
+
+        start = representation.startNumber;
+
+        if (isNaN(duration) && !isDynamic) {
+            segmentRange = { start: start, end: start };
+        } else {
+            segmentRange = (0, _SegmentsUtilsJs.decideSegmentListRangeForTemplate)(timelineConverter, isDynamic, representation, requestedTime, index, availabilityUpperLimit);
+        }
+
+        startIdx = segmentRange.start;
+        endIdx = segmentRange.end;
+
+        for (periodSegIdx = startIdx; periodSegIdx <= endIdx; periodSegIdx++) {
+
+            seg = (0, _SegmentsUtilsJs.getIndexBasedSegment)(timelineConverter, isDynamic, representation, periodSegIdx);
+            seg.replacementTime = (start + periodSegIdx - 1) * representation.segmentDuration;
+            url = template.media;
+            url = (0, _SegmentsUtilsJs.replaceTokenForTemplate)(url, 'Number', seg.replacementNumber);
+            url = (0, _SegmentsUtilsJs.replaceTokenForTemplate)(url, 'Time', seg.replacementTime);
+            seg.media = url;
+
+            segments.push(seg);
+            seg = null;
+        }
+
+        if (isNaN(duration)) {
+            representation.availableSegmentsNumber = 1;
+        } else {
+            representation.availableSegmentsNumber = Math.ceil((availabilityWindow.end - availabilityWindow.start) / duration);
+        }
+
+        return segments;
+    }
+
+    instance = {
+        getSegments: getSegmentsFromTemplate
+    };
+
+    return instance;
+}
+
+TemplateSegmentsGetter.__dashjs_factory_name = 'TemplateSegmentsGetter';
+var factory = _coreFactoryMakerJs2['default'].getClassFactory(TemplateSegmentsGetter);
+exports['default'] = factory;
+module.exports = exports['default'];
+
+},{"../../core/FactoryMaker.js":9,"./SegmentsUtils.js":23}],25:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -7639,7 +7813,186 @@ TimelineConverter.__dashjs_factory_name = 'TimelineConverter';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(TimelineConverter);
 module.exports = exports['default'];
 
-},{"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11}],22:[function(_dereq_,module,exports){
+},{"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11}],26:[function(_dereq_,module,exports){
+/**
+ * The copyright in this software is being made available under the BSD License,
+ * included below. This software may be subject to other third party and contributor
+ * rights, including patent rights, and no such rights are granted under this license.
+ *
+ * Copyright (c) 2013, Dash Industry Forum.
+ * All rights reserved.
+ *
+ * Redistribution and use in source and binary forms, with or without modification,
+ * are permitted provided that the following conditions are met:
+ *  * Redistributions of source code must retain the above copyright notice, this
+ *  list of conditions and the following disclaimer.
+ *  * Redistributions in binary form must reproduce the above copyright notice,
+ *  this list of conditions and the following disclaimer in the documentation and/or
+ *  other materials provided with the distribution.
+ *  * Neither the name of Dash Industry Forum nor the names of its
+ *  contributors may be used to endorse or promote products derived from this software
+ *  without specific prior written permission.
+ *
+ *  THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS AS IS AND ANY
+ *  EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
+ *  WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED.
+ *  IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT,
+ *  INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+ *  NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR
+ *  PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
+ *  WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+ *  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+ *  POSSIBILITY OF SUCH DAMAGE.
+ */
+
+'use strict';
+
+Object.defineProperty(exports, '__esModule', {
+    value: true
+});
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _coreFactoryMakerJs = _dereq_('../../core/FactoryMaker.js');
+
+var _coreFactoryMakerJs2 = _interopRequireDefault(_coreFactoryMakerJs);
+
+var _SegmentsUtilsJs = _dereq_('./SegmentsUtils.js');
+
+function TimelineSegmentsGetter(config, isDynamic) {
+
+    var timelineConverter = config.timelineConverter;
+
+    var instance = undefined;
+
+    function getSegmentsFromTimeline(representation, requestedTime, index, availabilityUpperLimit) {
+        var template = representation.adaptation.period.mpd.manifest.Period_asArray[representation.adaptation.period.index].AdaptationSet_asArray[representation.adaptation.index].Representation_asArray[representation.index].SegmentTemplate;
+        var timeline = template.SegmentTimeline;
+        var isAvailableSegmentNumberCalculated = representation.availableSegmentsNumber > 0;
+
+        var maxSegmentsAhead = 10;
+        var time = 0;
+        var scaledTime = 0;
+        var availabilityIdx = -1;
+        var segments = [];
+        var isStartSegmentForRequestedTimeFound = false;
+
+        var fragments, frag, i, len, j, repeat, repeatEndTime, nextFrag, calculatedRange, hasEnoughSegments, requiredMediaTime, startIdx, endIdx, fTimescale;
+
+        var createSegment = function createSegment(s) {
+            return (0, _SegmentsUtilsJs.getTimeBasedSegment)(timelineConverter, isDynamic, representation, time, s.d, fTimescale, template.media, s.mediaRange, availabilityIdx);
+        };
+
+        fTimescale = representation.timescale;
+
+        fragments = timeline.S_asArray;
+
+        calculatedRange = (0, _SegmentsUtilsJs.decideSegmentListRangeForTimeline)(timelineConverter, isDynamic, requestedTime, index, availabilityUpperLimit);
+
+        // if calculatedRange exists we should generate segments that belong to this range.
+        // Otherwise generate maxSegmentsAhead segments ahead of the requested time
+        if (calculatedRange) {
+            startIdx = calculatedRange.start;
+            endIdx = calculatedRange.end;
+        } else {
+            requiredMediaTime = timelineConverter.calcMediaTimeFromPresentationTime(requestedTime || 0, representation);
+        }
+
+        for (i = 0, len = fragments.length; i < len; i++) {
+            frag = fragments[i];
+            repeat = 0;
+            if (frag.hasOwnProperty('r')) {
+                repeat = frag.r;
+            }
+
+            //For a repeated S element, t belongs only to the first segment
+            if (frag.hasOwnProperty('t')) {
+                time = frag.t;
+                scaledTime = time / fTimescale;
+            }
+
+            //This is a special case: "A negative value of the @r attribute of the S element indicates that the duration indicated in @d attribute repeats until the start of the next S element, the end of the Period or until the
+            // next MPD update."
+            if (repeat < 0) {
+                nextFrag = fragments[i + 1];
+
+                if (nextFrag && nextFrag.hasOwnProperty('t')) {
+                    repeatEndTime = nextFrag.t / fTimescale;
+                } else {
+                    var availabilityEnd = representation.segmentAvailabilityRange ? representation.segmentAvailabilityRange.end : timelineConverter.calcSegmentAvailabilityRange(representation, isDynamic).end;
+                    repeatEndTime = timelineConverter.calcMediaTimeFromPresentationTime(availabilityEnd, representation);
+                    representation.segmentDuration = frag.d / fTimescale;
+                }
+
+                repeat = Math.ceil((repeatEndTime - scaledTime) / (frag.d / fTimescale)) - 1;
+            }
+
+            // if we have enough segments in the list, but we have not calculated the total number of the segments yet we
+            // should continue the loop and calc the number. Once it is calculated, we can break the loop.
+            if (hasEnoughSegments) {
+                if (isAvailableSegmentNumberCalculated) break;
+                availabilityIdx += repeat + 1;
+                continue;
+            }
+
+            for (j = 0; j <= repeat; j++) {
+                availabilityIdx++;
+
+                if (calculatedRange) {
+                    if (availabilityIdx > endIdx) {
+                        hasEnoughSegments = true;
+                        if (isAvailableSegmentNumberCalculated) break;
+                        continue;
+                    }
+
+                    if (availabilityIdx >= startIdx) {
+                        segments.push(createSegment(frag));
+                    }
+                } else {
+                    if (segments.length > maxSegmentsAhead) {
+                        hasEnoughSegments = true;
+                        if (isAvailableSegmentNumberCalculated) break;
+                        continue;
+                    }
+
+                    // In some cases when requiredMediaTime = actual end time of the last segment
+                    // it is possible that this time a bit exceeds the declared end time of the last segment.
+                    // in this case we still need to include the last segment in the segment list. to do this we
+                    // use a correction factor = 1.5. This number is used because the largest possible deviation is
+                    // is 50% of segment duration.
+                    if (isStartSegmentForRequestedTimeFound) {
+                        segments.push(createSegment(frag));
+                    } else if (scaledTime >= requiredMediaTime - frag.d / fTimescale * 1.5) {
+                        isStartSegmentForRequestedTimeFound = true;
+                        segments.push(createSegment(frag));
+                    }
+                }
+
+                time += frag.d;
+                scaledTime = time / fTimescale;
+            }
+        }
+
+        if (!isAvailableSegmentNumberCalculated) {
+            representation.availableSegmentsNumber = availabilityIdx + 1;
+        }
+
+        return segments;
+    }
+
+    instance = {
+        getSegments: getSegmentsFromTimeline
+    };
+
+    return instance;
+}
+
+TimelineSegmentsGetter.__dashjs_factory_name = 'TimelineSegmentsGetter';
+var factory = _coreFactoryMakerJs2['default'].getClassFactory(TimelineSegmentsGetter);
+exports['default'] = factory;
+module.exports = exports['default'];
+
+},{"../../core/FactoryMaker.js":9,"./SegmentsUtils.js":23}],27:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -7693,7 +8046,7 @@ var AdaptationSet = function AdaptationSet() {
 exports["default"] = AdaptationSet;
 module.exports = exports["default"];
 
-},{}],23:[function(_dereq_,module,exports){
+},{}],28:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -7750,7 +8103,7 @@ var Event = function Event() {
 exports['default'] = Event;
 module.exports = exports['default'];
 
-},{}],24:[function(_dereq_,module,exports){
+},{}],29:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -7807,7 +8160,7 @@ var EventStream = function EventStream() {
 exports['default'] = EventStream;
 module.exports = exports['default'];
 
-},{}],25:[function(_dereq_,module,exports){
+},{}],30:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -7867,7 +8220,7 @@ var Mpd = function Mpd() {
 exports["default"] = Mpd;
 module.exports = exports["default"];
 
-},{}],26:[function(_dereq_,module,exports){
+},{}],31:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -7925,7 +8278,7 @@ Period.DEFAULT_ID = 'defaultId';
 exports['default'] = Period;
 module.exports = exports['default'];
 
-},{}],27:[function(_dereq_,module,exports){
+},{}],32:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -7993,7 +8346,7 @@ var Representation = function Representation() {
 exports["default"] = Representation;
 module.exports = exports["default"];
 
-},{}],28:[function(_dereq_,module,exports){
+},{}],33:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -8068,7 +8421,7 @@ var Segment = function Segment() {
 exports["default"] = Segment;
 module.exports = exports["default"];
 
-},{}],29:[function(_dereq_,module,exports){
+},{}],34:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -8122,7 +8475,7 @@ var UTCTiming = function UTCTiming() {
 exports['default'] = UTCTiming;
 module.exports = exports['default'];
 
-},{}],30:[function(_dereq_,module,exports){
+},{}],35:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -8293,7 +8646,7 @@ factory.FRAGMENT_LOADER_ERROR_NULL_REQUEST = FRAGMENT_LOADER_ERROR_NULL_REQUEST;
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../core/FactoryMaker.js":9,"./../core/EventBus.js":8,"./../core/events/Events.js":11,"./XHRLoader.js":41,"./vo/Error.js":136,"./vo/HeadRequest.js":138}],31:[function(_dereq_,module,exports){
+},{"../core/FactoryMaker.js":9,"./../core/EventBus.js":8,"./../core/events/Events.js":11,"./XHRLoader.js":46,"./vo/Error.js":141,"./vo/HeadRequest.js":143}],36:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -8482,7 +8835,7 @@ factory.MANIFEST_LOADER_ERROR_LOADING_FAILURE = MANIFEST_LOADER_ERROR_LOADING_FA
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../core/EventBus.js":8,"../core/FactoryMaker.js":9,"../core/events/Events.js":11,"./XHRLoader.js":41,"./controllers/XlinkController.js":55,"./utils/URLUtils.js":132,"./vo/Error.js":136,"./vo/TextRequest.js":144,"./vo/metrics/HTTPRequest.js":153}],32:[function(_dereq_,module,exports){
+},{"../core/EventBus.js":8,"../core/FactoryMaker.js":9,"../core/events/Events.js":11,"./XHRLoader.js":46,"./controllers/XlinkController.js":60,"./utils/URLUtils.js":137,"./vo/Error.js":141,"./vo/TextRequest.js":149,"./vo/metrics/HTTPRequest.js":158}],37:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -8683,7 +9036,7 @@ ManifestUpdater.__dashjs_factory_name = 'ManifestUpdater';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(ManifestUpdater);
 module.exports = exports['default'];
 
-},{"../core/Debug.js":7,"../core/EventBus.js":8,"../core/FactoryMaker.js":9,"../core/events/Events.js":11}],33:[function(_dereq_,module,exports){
+},{"../core/Debug.js":7,"../core/EventBus.js":8,"../core/FactoryMaker.js":9,"../core/events/Events.js":11}],38:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -9395,6 +9748,22 @@ function MediaPlayer() {
      */
     function setLiveDelayFragmentCount(value) {
         mediaPlayerModel.setLiveDelayFragmentCount(value);
+    }
+
+    /**
+     * <p>Equivalent in seconds of setLiveDelayFragmentCount</p>
+     * <p>Lowering this value will lower latency but may decrease the player's ability to build a stable buffer.</p>
+     * <p>This value should be less than the manifest duration by a couple of segment durations to avoid playback issues</p>
+     * <p>If set, this parameter will take precedence over setLiveDelayFragmentCount and manifest info</p>
+     *
+     * @param value {int} Represents how many seconds to delay the live stream.
+     * @default undefined
+     * @memberof module:MediaPlayer
+     * @see {@link module:MediaPlayer#useSuggestedPresentationDelay useSuggestedPresentationDelay()}
+     * @instance
+     */
+    function setLiveDelay(value) {
+        mediaPlayerModel.setLiveDelay(value);
     }
 
     /**
@@ -10661,6 +11030,7 @@ function MediaPlayer() {
         getVideoElement: getVideoElement,
         getSource: getSource,
         setLiveDelayFragmentCount: setLiveDelayFragmentCount,
+        setLiveDelay: setLiveDelay,
         useSuggestedPresentationDelay: useSuggestedPresentationDelay,
         enableLastBitrateCaching: enableLastBitrateCaching,
         enableLastMediaSettingsCaching: enableLastMediaSettingsCaching,
@@ -10738,7 +11108,7 @@ factory.events = _MediaPlayerEventsJs2['default'];
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../core/FactoryMaker.js":9,"../dash/DashAdapter.js":13,"../dash/DashMetrics.js":15,"../dash/DashParser.js":16,"../dash/models/DashManifestModel.js":19,"../dash/utils/TimelineConverter.js":21,"../dash/vo/UTCTiming.js":29,"./../core/Debug.js":7,"./../core/EventBus.js":8,"./../core/events/Events.js":11,"./ManifestLoader.js":31,"./MediaPlayerEvents.js":34,"./TextSourceBuffer.js":38,"./TextTracks.js":39,"./VirtualBuffer.js":40,"./controllers/AbrController.js":43,"./controllers/MediaController.js":47,"./controllers/MediaSourceController.js":48,"./controllers/PlaybackController.js":49,"./controllers/SourceBufferController.js":51,"./controllers/StreamController.js":52,"./controllers/TimeSyncController.js":54,"./models/ManifestModel.js":80,"./models/MediaPlayerModel.js":81,"./models/MetricsModel.js":82,"./models/URIQueryAndFragmentModel.js":83,"./models/VideoModel.js":84,"./rules/RulesController.js":109,"./rules/abr/ABRRulesCollection.js":111,"./rules/synchronization/SynchronizationRulesCollection.js":122,"./utils/Capabilities.js":124,"./utils/ErrorHandler.js":127,"./utils/LiveEdgeFinder.js":129,"./utils/RequestModifier.js":130}],34:[function(_dereq_,module,exports){
+},{"../core/FactoryMaker.js":9,"../dash/DashAdapter.js":13,"../dash/DashMetrics.js":15,"../dash/DashParser.js":16,"../dash/models/DashManifestModel.js":19,"../dash/utils/TimelineConverter.js":25,"../dash/vo/UTCTiming.js":34,"./../core/Debug.js":7,"./../core/EventBus.js":8,"./../core/events/Events.js":11,"./ManifestLoader.js":36,"./MediaPlayerEvents.js":39,"./TextSourceBuffer.js":43,"./TextTracks.js":44,"./VirtualBuffer.js":45,"./controllers/AbrController.js":48,"./controllers/MediaController.js":52,"./controllers/MediaSourceController.js":53,"./controllers/PlaybackController.js":54,"./controllers/SourceBufferController.js":56,"./controllers/StreamController.js":57,"./controllers/TimeSyncController.js":59,"./models/ManifestModel.js":85,"./models/MediaPlayerModel.js":86,"./models/MetricsModel.js":87,"./models/URIQueryAndFragmentModel.js":88,"./models/VideoModel.js":89,"./rules/RulesController.js":114,"./rules/abr/ABRRulesCollection.js":116,"./rules/synchronization/SynchronizationRulesCollection.js":127,"./utils/Capabilities.js":129,"./utils/ErrorHandler.js":132,"./utils/LiveEdgeFinder.js":134,"./utils/RequestModifier.js":135}],39:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -10956,7 +11326,7 @@ var mediaPlayerEvents = new MediaPlayerEvents();
 exports['default'] = mediaPlayerEvents;
 module.exports = exports['default'];
 
-},{"../core/events/EventsBase.js":12}],35:[function(_dereq_,module,exports){
+},{"../core/events/EventsBase.js":12}],40:[function(_dereq_,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', {
@@ -11090,7 +11460,7 @@ if (!avoidAutoCreate && window && window.addEventListener) {
 exports['default'] = instance;
 module.exports = exports['default'];
 
-},{"./MediaPlayer.js":33}],36:[function(_dereq_,module,exports){
+},{"./MediaPlayer.js":38}],41:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -11721,7 +12091,7 @@ Stream.__dashjs_factory_name = 'Stream';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(Stream);
 module.exports = exports['default'];
 
-},{"../core/Debug.js":7,"../core/EventBus.js":8,"../core/FactoryMaker.js":9,"../core/events/Events.js":11,"../dash/DashHandler.js":14,"../dash/DashMetrics.js":15,"../dash/SegmentBaseLoader.js":17,"./StreamProcessor.js":37,"./TextSourceBuffer.js":38,"./controllers/AbrController.js":43,"./controllers/EventController.js":45,"./controllers/FragmentController.js":46,"./controllers/MediaController.js":47,"./controllers/PlaybackController.js":49,"./models/MetricsModel.js":82,"./models/VideoModel.js":84,"./utils/LiveEdgeFinder.js":129}],37:[function(_dereq_,module,exports){
+},{"../core/Debug.js":7,"../core/EventBus.js":8,"../core/FactoryMaker.js":9,"../core/events/Events.js":11,"../dash/DashHandler.js":14,"../dash/DashMetrics.js":15,"../dash/SegmentBaseLoader.js":17,"./StreamProcessor.js":42,"./TextSourceBuffer.js":43,"./controllers/AbrController.js":48,"./controllers/EventController.js":50,"./controllers/FragmentController.js":51,"./controllers/MediaController.js":52,"./controllers/PlaybackController.js":54,"./models/MetricsModel.js":87,"./models/VideoModel.js":89,"./utils/LiveEdgeFinder.js":134}],42:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -12114,7 +12484,7 @@ StreamProcessor.__dashjs_factory_name = 'StreamProcessor';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(StreamProcessor);
 module.exports = exports['default'];
 
-},{"../core/FactoryMaker.js":9,"../dash/DashMetrics.js":15,"../dash/controllers/RepresentationController.js":18,"../dash/models/DashManifestModel.js":19,"./FragmentLoader.js":30,"./TextSourceBuffer.js":38,"./VirtualBuffer.js":40,"./controllers/AbrController.js":43,"./controllers/BufferController.js":44,"./controllers/MediaController.js":47,"./controllers/MediaSourceController.js":48,"./controllers/ScheduleController.js":50,"./controllers/SourceBufferController":51,"./controllers/StreamController.js":52,"./controllers/TextController.js":53,"./models/MediaPlayerModel.js":81,"./models/MetricsModel.js":82,"./rules/RulesController.js":109,"./utils/ErrorHandler.js":127,"./utils/RequestModifier.js":130}],38:[function(_dereq_,module,exports){
+},{"../core/FactoryMaker.js":9,"../dash/DashMetrics.js":15,"../dash/controllers/RepresentationController.js":18,"../dash/models/DashManifestModel.js":19,"./FragmentLoader.js":35,"./TextSourceBuffer.js":43,"./VirtualBuffer.js":45,"./controllers/AbrController.js":48,"./controllers/BufferController.js":49,"./controllers/MediaController.js":52,"./controllers/MediaSourceController.js":53,"./controllers/ScheduleController.js":55,"./controllers/SourceBufferController":56,"./controllers/StreamController.js":57,"./controllers/TextController.js":58,"./models/MediaPlayerModel.js":86,"./models/MetricsModel.js":87,"./rules/RulesController.js":114,"./utils/ErrorHandler.js":132,"./utils/RequestModifier.js":135}],43:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -13012,7 +13382,7 @@ TextSourceBuffer.__dashjs_factory_name = 'TextSourceBuffer';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(TextSourceBuffer);
 module.exports = exports['default'];
 
-},{"../../externals/cea608-parser.js":2,"../core/Debug.js":7,"../core/FactoryMaker.js":9,"../dash/utils/FragmentedTextBoxParser.js":20,"./TextTracks.js":39,"./models/VideoModel.js":84,"./utils/BoxParser.js":123,"./utils/CustomTimeRanges.js":125,"./vo/TextTrackInfo.js":145,"codem-isoboxer":6}],39:[function(_dereq_,module,exports){
+},{"../../externals/cea608-parser.js":2,"../core/Debug.js":7,"../core/FactoryMaker.js":9,"../dash/utils/FragmentedTextBoxParser.js":20,"./TextTracks.js":44,"./models/VideoModel.js":89,"./utils/BoxParser.js":128,"./utils/CustomTimeRanges.js":130,"./vo/TextTrackInfo.js":150,"codem-isoboxer":6}],44:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -13616,7 +13986,7 @@ TextTracks.__dashjs_factory_name = 'TextTracks';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(TextTracks);
 module.exports = exports['default'];
 
-},{"../core/Debug.js":7,"../core/EventBus.js":8,"../core/FactoryMaker.js":9,"../core/events/Events.js":11}],40:[function(_dereq_,module,exports){
+},{"../core/Debug.js":7,"../core/EventBus.js":8,"../core/FactoryMaker.js":9,"../core/events/Events.js":11}],45:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -14033,7 +14403,7 @@ VirtualBuffer.__dashjs_factory_name = 'VirtualBuffer';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(VirtualBuffer);
 module.exports = exports['default'];
 
-},{"../core/EventBus.js":8,"../core/FactoryMaker.js":9,"../core/events/Events.js":11,"./controllers/MediaController.js":47,"./utils/CustomTimeRanges.js":125,"./vo/metrics/HTTPRequest.js":153}],41:[function(_dereq_,module,exports){
+},{"../core/EventBus.js":8,"../core/FactoryMaker.js":9,"../core/events/Events.js":11,"./controllers/MediaController.js":52,"./utils/CustomTimeRanges.js":130,"./vo/metrics/HTTPRequest.js":158}],46:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -14311,7 +14681,7 @@ var factory = _coreFactoryMakerJs2['default'].getClassFactory(XHRLoader);
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../core/FactoryMaker.js":9,"./models/MediaPlayerModel.js":81,"./vo/metrics/HTTPRequest.js":153}],42:[function(_dereq_,module,exports){
+},{"../core/FactoryMaker.js":9,"./models/MediaPlayerModel.js":86,"./vo/metrics/HTTPRequest.js":158}],47:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -14446,7 +14816,7 @@ factory.XLINK_LOADER_ERROR_LOADING_FAILURE = XLINK_LOADER_ERROR_LOADING_FAILURE;
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../core/EventBus.js":8,"../core/FactoryMaker.js":9,"../core/events/Events.js":11,"./XHRLoader.js":41,"./vo/Error.js":136,"./vo/TextRequest.js":144,"./vo/metrics/HTTPRequest.js":153}],43:[function(_dereq_,module,exports){
+},{"../core/EventBus.js":8,"../core/FactoryMaker.js":9,"../core/events/Events.js":11,"./XHRLoader.js":46,"./vo/Error.js":141,"./vo/TextRequest.js":149,"./vo/metrics/HTTPRequest.js":158}],48:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -14958,10 +15328,15 @@ function AbrController() {
     function onFragmentLoadProgress(e) {
         var type = e.request.mediaType;
         if (getAutoSwitchBitrateFor(type)) {
-            //check to see if there are parallel request or just one at a time.
+            //check to see if we are in manual or auto switch mode.
 
             var rules = abrRulesCollection.getRules(_rulesAbrABRRulesCollectionJs2['default'].ABANDON_FRAGMENT_RULES);
             var scheduleController = streamProcessorDict[type].getScheduleController();
+
+            // There may be a fragment load in progress when we switch periods and recreated some controllers.
+            // so return if that is the case.
+            if (!scheduleController) return;
+
             var fragmentModel = scheduleController.getFragmentModel();
             var callback = function callback(switchRequest) {
 
@@ -15036,7 +15411,7 @@ factory.ABANDON_LOAD = ABANDON_LOAD;
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../../dash/models/DashManifestModel.js":19,"../models/FragmentModel.js":79,"../models/ManifestModel.js":80,"../models/MediaPlayerModel.js":81,"../models/VideoModel.js":84,"../rules/SwitchRequest":110,"../rules/abr/ABRRulesCollection.js":111,"../utils/DOMStorage.js":126,"../vo/BitrateInfo.js":134}],44:[function(_dereq_,module,exports){
+},{"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../../dash/models/DashManifestModel.js":19,"../models/FragmentModel.js":84,"../models/ManifestModel.js":85,"../models/MediaPlayerModel.js":86,"../models/VideoModel.js":89,"../rules/SwitchRequest":115,"../rules/abr/ABRRulesCollection.js":116,"../utils/DOMStorage.js":131,"../vo/BitrateInfo.js":139}],49:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -15161,7 +15536,6 @@ function BufferController(config) {
         lastIndex = undefined,
         type = undefined,
         buffer = undefined,
-        minBufferTime = undefined,
         bufferState = undefined,
         appendedBytesInfo = undefined,
         wallclockTicked = undefined,
@@ -15174,7 +15548,8 @@ function BufferController(config) {
         abrController = undefined,
         fragmentController = undefined,
         scheduleController = undefined,
-        mediaPlayerModel = undefined;
+        mediaPlayerModel = undefined,
+        clearBufferTimeout = undefined;
 
     function setup() {
         requiredQuality = -1;
@@ -15192,6 +15567,7 @@ function BufferController(config) {
         isAppendingInProgress = false;
         isPruningInProgress = false;
         inbandEventFound = false;
+        clearBufferTimeout = null;
     }
 
     function initialize(Type, Source, StreamProcessor) {
@@ -15618,7 +15994,12 @@ function BufferController(config) {
         eventBus.trigger(_coreEventsEventsJs2['default'].BUFFER_CLEARED, { sender: instance, from: e.from, to: e.to, hasEnoughSpaceToAppend: hasEnoughSpaceToAppend() });
         if (hasEnoughSpaceToAppend()) return;
 
-        setTimeout(clearBuffer(getClearRange()), minBufferTime * 1000);
+        if (clearBufferTimeout === null) {
+            clearBufferTimeout = setTimeout(function () {
+                clearBufferTimeout = null;
+                clearBuffer(getClearRange());
+            }, streamProcessor.getStreamInfo().manifestInfo.minBufferTime * 1000);
+        }
     }
 
     function updateBufferTimestampOffset(MSETimeOffset) {
@@ -15668,15 +16049,7 @@ function BufferController(config) {
         if (e.sender.getStreamProcessor() !== streamProcessor) return;
         if (e.error) return;
 
-        var bufferLength;
-
         updateBufferTimestampOffset(e.currentRepresentation.MSETimeOffset);
-
-        bufferLength = streamProcessor.getStreamInfo().manifestInfo.minBufferTime;
-        //log("Min Buffer time: " + bufferLength);
-        if (minBufferTime !== bufferLength) {
-            setMinBufferTime(bufferLength);
-        }
     }
 
     function onStreamCompleted(e) {
@@ -15751,14 +16124,6 @@ function BufferController(config) {
         return bufferLevel;
     }
 
-    function getMinBufferTime() {
-        return minBufferTime;
-    }
-
-    function setMinBufferTime(value) {
-        minBufferTime = value;
-    }
-
     function getCriticalBufferLevel() {
         return criticalBufferLevel;
     }
@@ -15796,9 +16161,11 @@ function BufferController(config) {
         eventBus.off(_coreEventsEventsJs2['default'].SOURCEBUFFER_REMOVE_COMPLETED, onRemoved, this);
         eventBus.off(_coreEventsEventsJs2['default'].CHUNK_APPENDED, onChunkAppended, this);
 
+        clearTimeout(clearBufferTimeout);
+        clearBufferTimeout = null;
+
         criticalBufferLevel = Number.POSITIVE_INFINITY;
         bufferState = BUFFER_EMPTY;
-        minBufferTime = null;
         currentQuality = -1;
         lastIndex = -1;
         maxAppendedIndex = -1;
@@ -15831,8 +16198,6 @@ function BufferController(config) {
         getBuffer: getBuffer,
         setBuffer: setBuffer,
         getBufferLevel: getBufferLevel,
-        getMinBufferTime: getMinBufferTime,
-        setMinBufferTime: setMinBufferTime,
         getCriticalBufferLevel: getCriticalBufferLevel,
         setMediaSource: setMediaSource,
         getMediaSource: getMediaSource,
@@ -15853,7 +16218,7 @@ factory.BUFFER_EMPTY = BUFFER_EMPTY;
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../../core/Debug.js":7,"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../models/FragmentModel.js":79,"../models/MediaPlayerModel.js":81,"../utils/BoxParser.js":123,"../utils/CustomTimeRanges.js":125,"../vo/metrics/HTTPRequest.js":153,"./AbrController.js":43,"./MediaController.js":47,"./PlaybackController.js":49,"./SourceBufferController.js":51}],45:[function(_dereq_,module,exports){
+},{"../../core/Debug.js":7,"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../models/FragmentModel.js":84,"../models/MediaPlayerModel.js":86,"../utils/BoxParser.js":128,"../utils/CustomTimeRanges.js":130,"../vo/metrics/HTTPRequest.js":158,"./AbrController.js":48,"./MediaController.js":52,"./PlaybackController.js":54,"./SourceBufferController.js":56}],50:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -16102,7 +16467,7 @@ EventController.__dashjs_factory_name = 'EventController';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(EventController);
 module.exports = exports['default'];
 
-},{"../../core/Debug.js":7,"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../controllers/PlaybackController.js":49}],46:[function(_dereq_,module,exports){
+},{"../../core/Debug.js":7,"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../controllers/PlaybackController.js":54}],51:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -16293,7 +16658,7 @@ FragmentController.__dashjs_factory_name = 'FragmentController';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(FragmentController);
 module.exports = exports['default'];
 
-},{"../../core/Debug.js":7,"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../models/FragmentModel.js":79,"../models/MetricsModel.js":82,"../vo/DataChunk.js":135,"../vo/metrics/HTTPRequest.js":153}],47:[function(_dereq_,module,exports){
+},{"../../core/Debug.js":7,"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../models/FragmentModel.js":84,"../models/MetricsModel.js":87,"../vo/DataChunk.js":140,"../vo/metrics/HTTPRequest.js":158}],52:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -16408,7 +16773,7 @@ function MediaController() {
 
         if (settings) {
             tracksForType.forEach(function (track) {
-                if (!matchSettings(settings, track)) {
+                if (matchSettings(settings, track)) {
                     tracks.push(track);
                 }
             });
@@ -16807,7 +17172,7 @@ factory.DEFAULT_INIT_TRACK_SELECTION_MODE = DEFAULT_INIT_TRACK_SELECTION_MODE;
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../../core/Debug.js":7,"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../TextSourceBuffer.js":38,"../utils/DOMStorage.js":126}],48:[function(_dereq_,module,exports){
+},{"../../core/Debug.js":7,"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../TextSourceBuffer.js":43,"../utils/DOMStorage.js":131}],53:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -16878,9 +17243,7 @@ function MediaSourceController() {
     }
 
     function detachMediaSource(videoModel) {
-        // it seems that any value passed to the setSource is cast to a sting when setting element.src,
-        // so we cannot use null or undefined to reset the element. Use empty string instead.
-        videoModel.setSource('');
+        videoModel.setSource(null);
     }
 
     function setDuration(source, value) {
@@ -16921,7 +17284,7 @@ MediaSourceController.__dashjs_factory_name = 'MediaSourceController';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(MediaSourceController);
 module.exports = exports['default'];
 
-},{"../../core/FactoryMaker.js":9}],49:[function(_dereq_,module,exports){
+},{"../../core/FactoryMaker.js":9}],54:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -17011,6 +17374,7 @@ function PlaybackController() {
         streamInfo = undefined,
         isDynamic = undefined,
         mediaPlayerModel = undefined,
+        initialSeekCompleted = undefined,
         playOnceInitialized = undefined;
 
     function setup() {
@@ -17018,8 +17382,9 @@ function PlaybackController() {
         liveStartTime = NaN;
         wallclockTimeIntervalId = null;
         isDynamic = null;
-        commonEarliestTime = {};
+        initialSeekCompleted = false;
         playOnceInitialized = false;
+        commonEarliestTime = {};
         mediaPlayerModel = (0, _streamingModelsMediaPlayerModelJs2['default'])(context).getInstance();
     }
 
@@ -17121,22 +17486,32 @@ function PlaybackController() {
     }
 
     /**
-     * Gets a desirable delay for the live edge to avoid a risk of getting 404 when playing at the bleeding edge
+     * Computes the desirable delay for the live edge to avoid a risk of getting 404 when playing at the bleeding edge
      * @returns {Number} object
      * @memberof PlaybackController#
      * */
-    function getLiveDelay(fragmentDuration) {
-        var delay;
+    function computeLiveDelay(fragmentDuration, dvrWindowSize) {
         var mpd = dashManifestModel.getMpd(manifestModel.getValue());
+
+        var delay = undefined;
+        var END_OF_PLAYLIST_PADDING = 10;
 
         if (mediaPlayerModel.getUseSuggestedPresentationDelay() && mpd.hasOwnProperty('suggestedPresentationDelay')) {
             delay = mpd.suggestedPresentationDelay;
+        } else if (mediaPlayerModel.getLiveDelay()) {
+            delay = mediaPlayerModel.getLiveDelay(); // If set by user, this value takes precedence
         } else if (!isNaN(fragmentDuration)) {
-            delay = fragmentDuration * mediaPlayerModel.getLiveDelayFragmentCount();
-        } else {
-            delay = streamInfo.manifestInfo.minBufferTime * 2;
-        }
-        return delay;
+                delay = fragmentDuration * mediaPlayerModel.getLiveDelayFragmentCount();
+            } else {
+                delay = streamInfo.manifestInfo.minBufferTime * 2;
+            }
+
+        // cap target latency to:
+        // - dvrWindowSize / 2 for short playlists
+        // - dvrWindowSize - END_OF_PLAYLIST_PADDING for longer playlists
+        var targetDelayCapping = Math.max(dvrWindowSize - END_OF_PLAYLIST_PADDING, dvrWindowSize / 2);
+
+        return Math.min(delay, targetDelayCapping);
     }
 
     function reset() {
@@ -17205,11 +17580,11 @@ function PlaybackController() {
             }
             presentationStartTime = presentationStartTime || liveStartTime;
         } else {
-            if (!isNaN(startTimeOffset) && startTimeOffset < streamInfo.duration && startTimeOffset >= 0) {
+            if (!isNaN(startTimeOffset) && startTimeOffset < Math.max(streamInfo.manifestInfo.duration, streamInfo.duration) && startTimeOffset >= 0) {
                 presentationStartTime = startTimeOffset;
             } else {
-                var cet = commonEarliestTime[streamInfo.id] || 0.0;
-                presentationStartTime = Math.max(cet, streamInfo.start);
+                var earliestTime = commonEarliestTime[streamInfo.id] || streamController.getActiveStreamCommonEarliestTime();
+                presentationStartTime = Math.max(earliestTime, streamInfo.start);
             }
         }
 
@@ -17250,9 +17625,10 @@ function PlaybackController() {
 
     function seekToStartTimeOffset() {
         var initialSeekTime = getStreamStartTime(streamInfo, false);
-        if (!isSeeking() && initialSeekTime > 0) {
-            log('Starting playback at offset: ' + initialSeekTime);
+        if (!initialSeekCompleted && initialSeekTime > 0) {
+            initialSeekCompleted = true;
             seek(initialSeekTime);
+            log('Starting playback at offset: ' + initialSeekTime);
         }
     }
 
@@ -17273,8 +17649,8 @@ function PlaybackController() {
         var info = representationInfo.mediaInfo.streamInfo;
 
         if (streamInfo.id !== info.id) return;
+        streamInfo = info;
 
-        streamInfo = representationInfo.mediaInfo.streamInfo;
         updateCurrentTime();
     }
 
@@ -17366,12 +17742,11 @@ function PlaybackController() {
         if (!ranges || !ranges.length) return;
         var bufferedStart = Math.max(ranges.start(0), streamInfo.start);
         commonEarliestTime[streamInfo.id] = commonEarliestTime[streamInfo.id] === undefined ? bufferedStart : Math.max(commonEarliestTime[streamInfo.id], bufferedStart);
-
-        if (isSeeking()) {
-            commonEarliestTime = {};
-        } else if (getTime() < commonEarliestTime[streamInfo.id]) {
-            seek(getStreamStartTime(streamInfo, true));
-        }
+        //Commenting this out for now I do not believe it is still needed after fix for issue #1275.
+        //we still want to trap commonEarliestTime for use on seek back to zero.
+        //if (!getTime() < commonEarliestTime[streamInfo.id]) {
+        //    seek(getStreamStartTime(streamInfo, true));
+        //}
     }
 
     function onBufferLevelStateChanged(e) {
@@ -17425,7 +17800,7 @@ function PlaybackController() {
         getIsDynamic: getIsDynamic,
         setLiveStartTime: setLiveStartTime,
         getLiveStartTime: getLiveStartTime,
-        getLiveDelay: getLiveDelay,
+        computeLiveDelay: computeLiveDelay,
         play: play,
         isPaused: isPaused,
         pause: pause,
@@ -17443,7 +17818,7 @@ PlaybackController.__dashjs_factory_name = 'PlaybackController';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(PlaybackController);
 module.exports = exports['default'];
 
-},{"../../core/Debug.js":7,"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../../streaming/models/MediaPlayerModel.js":81,"../models/URIQueryAndFragmentModel.js":83,"./BufferController.js":44}],50:[function(_dereq_,module,exports){
+},{"../../core/Debug.js":7,"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../../streaming/models/MediaPlayerModel.js":86,"../models/URIQueryAndFragmentModel.js":88,"./BufferController.js":49}],55:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -17875,26 +18250,25 @@ function ScheduleController(config) {
     function onLiveEdgeSearchCompleted(e) {
         if (e.error) return;
 
-        // step back from a found live edge time to be able to buffer some data
         var liveEdgeTime = e.liveEdge;
         var manifestInfo = currentRepresentationInfo.mediaInfo.streamInfo.manifestInfo;
-        var startTime = liveEdgeTime - Math.min(playbackController.getLiveDelay(currentRepresentationInfo.fragmentDuration), manifestInfo.DVRWindowSize / 2);
+        var startTime = liveEdgeTime - playbackController.computeLiveDelay(currentRepresentationInfo.fragmentDuration, manifestInfo.DVRWindowSize / 2);
         var metrics = metricsModel.getMetricsFor('stream');
         var manifestUpdateInfo = dashMetrics.getCurrentManifestUpdate(metrics);
         var currentLiveStart = playbackController.getLiveStartTime();
 
-        var request, actualStartTime;
+        var request = undefined,
+            actualStartTime = undefined;
 
         // get a request for a start time
         request = adapter.getFragmentRequestForTime(streamProcessor, currentRepresentationInfo, startTime, { ignoreIsFinished: true });
         actualStartTime = request.startTime;
-
+        seekTarget = actualStartTime; //Setting seekTarget will allow NextFragmentRequestRule's first request time to be accurate.
         if (isNaN(currentLiveStart) || actualStartTime > currentLiveStart) {
             playbackController.setLiveStartTime(actualStartTime);
         }
 
         metricsModel.updateManifestUpdateInfo(manifestUpdateInfo, { currentTime: actualStartTime, presentationStartTime: liveEdgeTime, latency: liveEdgeTime - actualStartTime, clientTimeOffset: timelineConverter.getClientTimeOffset() });
-
         ready = true;
         start();
     }
@@ -17987,7 +18361,7 @@ ScheduleController.__dashjs_factory_name = 'ScheduleController';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(ScheduleController);
 module.exports = exports['default'];
 
-},{"../../core/Debug.js":7,"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../../dash/DashAdapter.js":13,"../../dash/DashMetrics.js":15,"../TextSourceBuffer.js":38,"../VirtualBuffer.js":40,"../controllers/SourceBufferController.js":51,"../models/MetricsModel.js":82,"../rules/scheduling/BufferLevelRule.js":118,"../rules/scheduling/NextFragmentRequestRule.js":119,"../utils/LiveEdgeFinder.js":129,"../vo/metrics/PlayList.js":155,"./AbrController.js":43,"./BufferController.js":44,"./PlaybackController.js":49}],51:[function(_dereq_,module,exports){
+},{"../../core/Debug.js":7,"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../../dash/DashAdapter.js":13,"../../dash/DashMetrics.js":15,"../TextSourceBuffer.js":43,"../VirtualBuffer.js":45,"../controllers/SourceBufferController.js":56,"../models/MetricsModel.js":87,"../rules/scheduling/BufferLevelRule.js":123,"../rules/scheduling/NextFragmentRequestRule.js":124,"../utils/LiveEdgeFinder.js":134,"../vo/metrics/PlayList.js":160,"./AbrController.js":48,"./BufferController.js":49,"./PlaybackController.js":54}],56:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -18414,7 +18788,7 @@ factory.QUOTA_EXCEEDED_ERROR_CODE = QUOTA_EXCEEDED_ERROR_CODE;
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../../dash/DashAdapter.js":13,"../TextSourceBuffer.js":38,"../TextTracks.js":39,"../models/VideoModel.js":84,"../utils/ErrorHandler.js":127,"../utils/TTMLParser.js":131,"../utils/VTTParser.js":133,"../vo/Error.js":136,"./MediaController.js":47,"./StreamController.js":52}],52:[function(_dereq_,module,exports){
+},{"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../../dash/DashAdapter.js":13,"../TextSourceBuffer.js":43,"../TextTracks.js":44,"../models/VideoModel.js":89,"../utils/ErrorHandler.js":132,"../utils/TTMLParser.js":136,"../utils/VTTParser.js":138,"../vo/Error.js":141,"./MediaController.js":52,"./StreamController.js":57}],57:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -18793,6 +19167,17 @@ function StreamController() {
         return null;
     }
 
+    function getActiveStreamCommonEarliestTime() {
+        var commonEarliestTime = [];
+        activeStream.getProcessors().forEach(function (p) {
+            var segments = p.getIndexHandler().getInitialSegmentList();
+            if (segments.length && segments.length > 0) {
+                commonEarliestTime.push(segments[0].presentationStartTime);
+            }
+        });
+        return Math.max.apply(Math, commonEarliestTime);
+    }
+
     function switchStream(from, to, seekTime) {
 
         if (isStreamSwitchingInProgress || !from || !to || from === to) return;
@@ -19153,6 +19538,7 @@ function StreamController() {
         getStreamById: getStreamById,
         load: load,
         loadWithManifest: loadWithManifest,
+        getActiveStreamCommonEarliestTime: getActiveStreamCommonEarliestTime,
         setConfig: setConfig,
         reset: reset
     };
@@ -19167,7 +19553,7 @@ StreamController.__dashjs_factory_name = 'StreamController';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(StreamController);
 module.exports = exports['default'];
 
-},{"../../core/Debug.js":7,"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../ManifestUpdater.js":32,"../Stream.js":36,"../models/MediaPlayerModel.js":81,"../models/URIQueryAndFragmentModel.js":83,"../models/VideoModel.js":84,"../vo/metrics/PlayList.js":155,"./PlaybackController.js":49}],53:[function(_dereq_,module,exports){
+},{"../../core/Debug.js":7,"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../ManifestUpdater.js":37,"../Stream.js":41,"../models/MediaPlayerModel.js":86,"../models/URIQueryAndFragmentModel.js":88,"../models/VideoModel.js":89,"../vo/metrics/PlayList.js":160,"./PlaybackController.js":54}],58:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -19332,7 +19718,7 @@ TextController.__dashjs_factory_name = 'TextController';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(TextController);
 module.exports = exports['default'];
 
-},{"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11}],54:[function(_dereq_,module,exports){
+},{"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11}],59:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -19703,7 +20089,7 @@ factory.HTTP_TIMEOUT_MS = HTTP_TIMEOUT_MS;
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../../core/Debug.js":7,"../../core/FactoryMaker.js":9,"./../../core/EventBus.js":8,"./../../core/events/Events.js":11,"./../vo/Error.js":136}],55:[function(_dereq_,module,exports){
+},{"../../core/Debug.js":7,"../../core/FactoryMaker.js":9,"./../../core/EventBus.js":8,"./../../core/events/Events.js":11,"./../vo/Error.js":141}],60:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -19997,7 +20383,7 @@ XlinkController.__dashjs_factory_name = 'XlinkController';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(XlinkController);
 module.exports = exports['default'];
 
-},{"../../../externals/xml2json.js":4,"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../XlinkLoader.js":42}],56:[function(_dereq_,module,exports){
+},{"../../../externals/xml2json.js":4,"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../XlinkLoader.js":47}],61:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -20112,7 +20498,7 @@ factory.events = _MetricsReportingEventsJs2['default'];
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../../core/FactoryMaker.js":9,"./MetricsReportingEvents.js":57,"./controllers/MetricsCollectionController.js":58,"./metrics/MetricsHandlerFactory.js":63,"./reporting/ReportingFactory.js":68,"./utils/DVBErrorsTranslator.js":70}],57:[function(_dereq_,module,exports){
+},{"../../core/FactoryMaker.js":9,"./MetricsReportingEvents.js":62,"./controllers/MetricsCollectionController.js":63,"./metrics/MetricsHandlerFactory.js":68,"./reporting/ReportingFactory.js":73,"./utils/DVBErrorsTranslator.js":75}],62:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -20180,7 +20566,7 @@ var metricsReportingEvents = new MetricsReportingEvents();
 exports['default'] = metricsReportingEvents;
 module.exports = exports['default'];
 
-},{"../../core/events/EventsBase.js":12}],58:[function(_dereq_,module,exports){
+},{"../../core/events/EventsBase.js":12}],63:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -20309,7 +20695,7 @@ MetricsCollectionController.__dashjs_factory_name = 'MetricsCollectionController
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(MetricsCollectionController);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"../../../core/events/Events.js":11,"../MetricsReportingEvents.js":57,"../utils/ManifestParsing.js":72,"./MetricsController.js":59}],59:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"../../../core/events/Events.js":11,"../MetricsReportingEvents.js":62,"../utils/ManifestParsing.js":77,"./MetricsController.js":64}],64:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -20426,7 +20812,7 @@ MetricsController.__dashjs_factory_name = 'MetricsController';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(MetricsController);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"./MetricsHandlersController.js":60,"./RangeController.js":61,"./ReportingController.js":62}],60:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"./MetricsHandlersController.js":65,"./RangeController.js":66,"./ReportingController.js":67}],65:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -20550,7 +20936,7 @@ MetricsHandlersController.__dashjs_factory_name = 'MetricsHandlersController';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(MetricsHandlersController);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"../../MediaPlayerEvents.js":34,"../metrics/MetricsHandlerFactory.js":63}],61:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"../../MediaPlayerEvents.js":39,"../metrics/MetricsHandlerFactory.js":68}],66:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -20667,7 +21053,7 @@ RangeController.__dashjs_factory_name = 'RangeController';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(RangeController);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"../../utils/CustomTimeRanges.js":125}],62:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"../../utils/CustomTimeRanges.js":130}],67:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -20765,7 +21151,7 @@ ReportingController.__dashjs_factory_name = 'ReportingController';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(ReportingController);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"../reporting/ReportingFactory.js":68}],63:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"../reporting/ReportingFactory.js":73}],68:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -20887,7 +21273,7 @@ MetricsHandlerFactory.__dashjs_factory_name = 'MetricsHandlerFactory';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(MetricsHandlerFactory);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"./handlers/BufferLevelHandler.js":64,"./handlers/DVBErrorsHandler.js":65,"./handlers/GenericMetricHandler.js":66,"./handlers/HttpListHandler.js":67}],64:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"./handlers/BufferLevelHandler.js":69,"./handlers/DVBErrorsHandler.js":70,"./handlers/GenericMetricHandler.js":71,"./handlers/HttpListHandler.js":72}],69:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -21010,7 +21396,7 @@ BufferLevelHandler.__dashjs_factory_name = 'BufferLevelHandler';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(BufferLevelHandler);
 module.exports = exports['default'];
 
-},{"../../../../core/FactoryMaker.js":9,"../../utils/HandlerHelpers.js":71}],65:[function(_dereq_,module,exports){
+},{"../../../../core/FactoryMaker.js":9,"../../utils/HandlerHelpers.js":76}],70:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -21107,7 +21493,7 @@ function DVBErrorsHandler(config) {
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(DVBErrorsHandler);
 module.exports = exports['default'];
 
-},{"../../../../core/FactoryMaker.js":9,"../../MetricsReportingEvents.js":57}],66:[function(_dereq_,module,exports){
+},{"../../../../core/FactoryMaker.js":9,"../../MetricsReportingEvents.js":62}],71:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -21189,7 +21575,7 @@ GenericMetricHandler.__dashjs_factory_name = 'GenericMetricHandler';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(GenericMetricHandler);
 module.exports = exports['default'];
 
-},{"../../../../core/FactoryMaker.js":9}],67:[function(_dereq_,module,exports){
+},{"../../../../core/FactoryMaker.js":9}],72:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -21311,7 +21697,7 @@ HttpListHandler.__dashjs_factory_name = 'HttpListHandler';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(HttpListHandler);
 module.exports = exports['default'];
 
-},{"../../../../core/FactoryMaker.js":9,"../../utils/HandlerHelpers.js":71}],68:[function(_dereq_,module,exports){
+},{"../../../../core/FactoryMaker.js":9,"../../utils/HandlerHelpers.js":76}],73:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -21406,7 +21792,7 @@ ReportingFactory.__dashjs_factory_name = 'ReportingFactory';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(ReportingFactory);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"./reporters/DVBReporting.js":69}],69:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"./reporters/DVBReporting.js":74}],74:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -21606,7 +21992,7 @@ DVBReporting.__dashjs_factory_name = 'DVBReporting';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(DVBReporting);
 module.exports = exports['default'];
 
-},{"../../../../core/FactoryMaker.js":9,"../../utils/MetricSerialiser.js":73,"../../utils/RNG.js":74}],70:[function(_dereq_,module,exports){
+},{"../../../../core/FactoryMaker.js":9,"../../utils/MetricSerialiser.js":78,"../../utils/RNG.js":79}],75:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -21790,7 +22176,7 @@ DVBErrorsTranslator.__dashjs_factory_name = 'DVBErrorsTranslator';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(DVBErrorsTranslator);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"../../../core/events/Events.js":11,"../../MediaPlayerEvents.js":34,"../MetricsReportingEvents.js":57,"../vo/DVBErrors.js":75}],71:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"../../../core/events/Events.js":11,"../../MediaPlayerEvents.js":39,"../MetricsReportingEvents.js":62,"../vo/DVBErrors.js":80}],76:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -21876,7 +22262,7 @@ HandlerHelpers.__dashjs_factory_name = 'HandlerHelpers';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(HandlerHelpers);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9}],72:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9}],77:[function(_dereq_,module,exports){
 'use strict';
 
 Object.defineProperty(exports, '__esModule', {
@@ -22017,7 +22403,7 @@ ManifestParsing.__dashjs_factory_name = 'ManifestParsing';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(ManifestParsing);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"../vo/Metrics.js":76,"../vo/Range.js":77,"../vo/Reporting.js":78}],73:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"../vo/Metrics.js":81,"../vo/Range.js":82,"../vo/Reporting.js":83}],78:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -22128,7 +22514,7 @@ MetricSerialiser.__dashjs_factory_name = 'MetricSerialiser';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(MetricSerialiser);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9}],74:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9}],79:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -22239,7 +22625,7 @@ RNG.__dashjs_factory_name = 'RNG';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(RNG);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9}],75:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9}],80:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -22347,7 +22733,7 @@ DVBErrors.BECAME_REPORTER = 'S00';
 exports['default'] = DVBErrors;
 module.exports = exports['default'];
 
-},{}],76:[function(_dereq_,module,exports){
+},{}],81:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -22401,7 +22787,7 @@ var Metrics = function Metrics() {
 exports['default'] = Metrics;
 module.exports = exports['default'];
 
-},{}],77:[function(_dereq_,module,exports){
+},{}],82:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -22458,7 +22844,7 @@ var Range = function Range() {
 exports["default"] = Range;
 module.exports = exports["default"];
 
-},{}],78:[function(_dereq_,module,exports){
+},{}],83:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -22512,7 +22898,7 @@ var Reporting = function Reporting() {
 exports['default'] = Reporting;
 module.exports = exports['default'];
 
-},{}],79:[function(_dereq_,module,exports){
+},{}],84:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -22874,7 +23260,7 @@ factory.FRAGMENT_MODEL_FAILED = FRAGMENT_MODEL_FAILED;
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../../core/Debug.js":7,"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../vo/FragmentRequest.js":137}],80:[function(_dereq_,module,exports){
+},{"../../core/Debug.js":7,"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../vo/FragmentRequest.js":142}],85:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -22954,7 +23340,7 @@ ManifestModel.__dashjs_factory_name = 'ManifestModel';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(ManifestModel);
 module.exports = exports['default'];
 
-},{"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11}],81:[function(_dereq_,module,exports){
+},{"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11}],86:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -23039,6 +23425,7 @@ function MediaPlayerModel() {
         useSuggestedPresentationDelay = undefined,
         UTCTimingSources = undefined,
         liveDelayFragmentCount = undefined,
+        liveDelay = undefined,
         scheduleWhilePaused = undefined,
         bufferToKeep = undefined,
         bufferPruningInterval = undefined,
@@ -23067,6 +23454,7 @@ function MediaPlayerModel() {
         lastBitrateCachingInfo = { enabled: true, ttl: DEFAULT_LOCAL_STORAGE_BITRATE_EXPIRATION };
         lastMediaSettingsCachingInfo = { enabled: true, ttl: DEFAULT_LOCAL_STORAGE_MEDIA_SETTINGS_EXPIRATION };
         liveDelayFragmentCount = LIVE_DELAY_FRAGMENT_COUNT;
+        liveDelay = undefined; // Explicitly state that default is undefined
         bufferToKeep = BUFFER_TO_KEEP;
         bufferPruningInterval = BUFFER_PRUNING_INTERVAL;
         stableBufferTime = DEFAULT_MIN_BUFFER_TIME;
@@ -23238,8 +23626,16 @@ function MediaPlayerModel() {
         liveDelayFragmentCount = value;
     }
 
+    function setLiveDelay(value) {
+        liveDelay = value;
+    }
+
     function getLiveDelayFragmentCount() {
         return liveDelayFragmentCount;
+    }
+
+    function getLiveDelay() {
+        return liveDelay;
     }
 
     function setUseManifestDateHeaderTimeSource(value) {
@@ -23312,6 +23708,8 @@ function MediaPlayerModel() {
         setUseSuggestedPresentationDelay: setUseSuggestedPresentationDelay,
         setLiveDelayFragmentCount: setLiveDelayFragmentCount,
         getLiveDelayFragmentCount: getLiveDelayFragmentCount,
+        getLiveDelay: getLiveDelay,
+        setLiveDelay: setLiveDelay,
         setUseManifestDateHeaderTimeSource: setUseManifestDateHeaderTimeSource,
         getUseManifestDateHeaderTimeSource: getUseManifestDateHeaderTimeSource,
         setUTCTimingSources: setUTCTimingSources,
@@ -23331,7 +23729,7 @@ factory.DEFAULT_UTC_TIMING_SOURCE = DEFAULT_UTC_TIMING_SOURCE;
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../../core/FactoryMaker.js":9,"../vo/metrics/HTTPRequest.js":153}],82:[function(_dereq_,module,exports){
+},{"../../core/FactoryMaker.js":9,"../vo/metrics/HTTPRequest.js":158}],87:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -23825,7 +24223,7 @@ MetricsModel.__dashjs_factory_name = 'MetricsModel';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(MetricsModel);
 module.exports = exports['default'];
 
-},{"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../vo/MetricsList.js":142,"../vo/metrics/BolaState.js":148,"../vo/metrics/BufferLevel.js":149,"../vo/metrics/BufferState.js":150,"../vo/metrics/DVRInfo.js":151,"../vo/metrics/DroppedFrames.js":152,"../vo/metrics/HTTPRequest.js":153,"../vo/metrics/ManifestUpdate.js":154,"../vo/metrics/RepresentationSwitch.js":156,"../vo/metrics/RequestsQueue.js":157,"../vo/metrics/SchedulingInfo.js":158,"../vo/metrics/TCPConnection.js":159}],83:[function(_dereq_,module,exports){
+},{"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../vo/MetricsList.js":147,"../vo/metrics/BolaState.js":153,"../vo/metrics/BufferLevel.js":154,"../vo/metrics/BufferState.js":155,"../vo/metrics/DVRInfo.js":156,"../vo/metrics/DroppedFrames.js":157,"../vo/metrics/HTTPRequest.js":158,"../vo/metrics/ManifestUpdate.js":159,"../vo/metrics/RepresentationSwitch.js":161,"../vo/metrics/RequestsQueue.js":162,"../vo/metrics/SchedulingInfo.js":163,"../vo/metrics/TCPConnection.js":164}],88:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -23962,7 +24360,7 @@ URIQueryAndFragmentModel.__dashjs_factory_name = 'URIQueryAndFragmentModel';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(URIQueryAndFragmentModel);
 module.exports = exports['default'];
 
-},{"../../core/FactoryMaker.js":9,"../vo/URIFragmentData.js":147}],84:[function(_dereq_,module,exports){
+},{"../../core/FactoryMaker.js":9,"../vo/URIFragmentData.js":152}],89:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -24061,6 +24459,9 @@ function VideoModel() {
     function setSource(source) {
         if (source) {
             element.src = source;
+        } else {
+            element.removeAttribute('src');
+            element.load();
         }
     }
 
@@ -24181,7 +24582,7 @@ VideoModel.__dashjs_factory_name = 'VideoModel';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(VideoModel);
 module.exports = exports['default'];
 
-},{"../../core/FactoryMaker.js":9}],85:[function(_dereq_,module,exports){
+},{"../../core/FactoryMaker.js":9}],90:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -24419,7 +24820,7 @@ var CommonEncryption = (function () {
 exports['default'] = CommonEncryption;
 module.exports = exports['default'];
 
-},{"../../../externals/base64.js":1}],86:[function(_dereq_,module,exports){
+},{"../../../externals/base64.js":1}],91:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -24638,7 +25039,7 @@ factory.events = _ProtectionEventsJs2['default'];
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../../core/FactoryMaker.js":9,"./ProtectionEvents.js":87,"./controllers/ProtectionController.js":88,"./controllers/ProtectionKeyController.js":89,"./models/ProtectionModel_01b.js":93,"./models/ProtectionModel_21Jan2015.js":94,"./models/ProtectionModel_3Feb2014.js":95}],87:[function(_dereq_,module,exports){
+},{"../../core/FactoryMaker.js":9,"./ProtectionEvents.js":92,"./controllers/ProtectionController.js":93,"./controllers/ProtectionKeyController.js":94,"./models/ProtectionModel_01b.js":98,"./models/ProtectionModel_21Jan2015.js":99,"./models/ProtectionModel_3Feb2014.js":100}],92:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -24841,7 +25242,7 @@ var protectionEvents = new ProtectionEvents();
 exports['default'] = protectionEvents;
 module.exports = exports['default'];
 
-},{"../../core/events/EventsBase.js":12}],88:[function(_dereq_,module,exports){
+},{"../../core/events/EventsBase.js":12}],93:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -25430,7 +25831,7 @@ ProtectionController.__dashjs_factory_name = 'ProtectionController';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(ProtectionController);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"../../../core/events/Events.js":11,"../CommonEncryption.js":85,"../Protection.js":86,"../vo/KeySystemConfiguration.js":105,"../vo/MediaCapability.js":106}],89:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"../../../core/events/Events.js":11,"../CommonEncryption.js":90,"../Protection.js":91,"../vo/KeySystemConfiguration.js":110,"../vo/MediaCapability.js":111}],94:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -25779,7 +26180,7 @@ ProtectionKeyController.__dashjs_factory_name = 'ProtectionKeyController';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(ProtectionKeyController);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"./../CommonEncryption.js":85,"./../drm/KeySystemClearKey.js":90,"./../drm/KeySystemPlayReady.js":91,"./../drm/KeySystemWidevine.js":92,"./../servers/ClearKey.js":96,"./../servers/DRMToday.js":97,"./../servers/PlayReady.js":98,"./../servers/Widevine.js":99}],90:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"./../CommonEncryption.js":90,"./../drm/KeySystemClearKey.js":95,"./../drm/KeySystemPlayReady.js":96,"./../drm/KeySystemWidevine.js":97,"./../servers/ClearKey.js":101,"./../servers/DRMToday.js":102,"./../servers/PlayReady.js":103,"./../servers/Widevine.js":104}],95:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -25907,7 +26308,7 @@ KeySystemClearKey.__dashjs_factory_name = 'KeySystemClearKey';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(KeySystemClearKey);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"../CommonEncryption.js":85,"../vo/ClearKeyKeySet.js":100,"../vo/KeyPair.js":103}],91:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"../CommonEncryption.js":90,"../vo/ClearKeyKeySet.js":105,"../vo/KeyPair.js":108}],96:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -26152,7 +26553,7 @@ KeySystemPlayReady.__dashjs_factory_name = 'KeySystemPlayReady';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(KeySystemPlayReady);
 module.exports = exports['default'];
 
-},{"../../../../externals/base64.js":1,"../../../core/FactoryMaker.js":9,"../../vo/Error.js":136,"../CommonEncryption.js":85}],92:[function(_dereq_,module,exports){
+},{"../../../../externals/base64.js":1,"../../../core/FactoryMaker.js":9,"../../vo/Error.js":141,"../CommonEncryption.js":90}],97:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -26248,7 +26649,7 @@ KeySystemWidevine.__dashjs_factory_name = 'KeySystemWidevine';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(KeySystemWidevine);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"../CommonEncryption.js":85}],93:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"../CommonEncryption.js":90}],98:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -26699,7 +27100,7 @@ ProtectionModel_01b.__dashjs_factory_name = 'ProtectionModel_01b';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(ProtectionModel_01b);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"../../../core/events/Events.js":11,"../../utils/ErrorHandler.js":127,"../controllers/ProtectionKeyController.js":89,"../vo/KeyError.js":101,"../vo/KeyMessage.js":102,"../vo/KeySystemAccess.js":104,"../vo/KeySystemConfiguration.js":105,"../vo/NeedKey.js":107}],94:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"../../../core/events/Events.js":11,"../../utils/ErrorHandler.js":132,"../controllers/ProtectionKeyController.js":94,"../vo/KeyError.js":106,"../vo/KeyMessage.js":107,"../vo/KeySystemAccess.js":109,"../vo/KeySystemConfiguration.js":110,"../vo/NeedKey.js":112}],99:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -27107,7 +27508,7 @@ ProtectionModel_21Jan2015.__dashjs_factory_name = 'ProtectionModel_21Jan2015';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(ProtectionModel_21Jan2015);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"../../../core/events/Events.js":11,"../controllers/ProtectionKeyController.js":89,"../vo/KeyError.js":101,"../vo/KeyMessage.js":102,"../vo/KeySystemAccess.js":104,"../vo/NeedKey.js":107}],95:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"../../../core/events/Events.js":11,"../controllers/ProtectionKeyController.js":94,"../vo/KeyError.js":106,"../vo/KeyMessage.js":107,"../vo/KeySystemAccess.js":109,"../vo/NeedKey.js":112}],100:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -27513,7 +27914,7 @@ ProtectionModel_3Feb2014.__dashjs_factory_name = 'ProtectionModel_3Feb2014';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(ProtectionModel_3Feb2014);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"../../../core/events/Events.js":11,"../controllers/ProtectionKeyController.js":89,"../vo/KeyError.js":101,"../vo/KeyMessage.js":102,"../vo/KeySystemAccess.js":104,"../vo/KeySystemConfiguration.js":105,"../vo/NeedKey.js":107}],96:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"../../../core/events/Events.js":11,"../controllers/ProtectionKeyController.js":94,"../vo/KeyError.js":106,"../vo/KeyMessage.js":107,"../vo/KeySystemAccess.js":109,"../vo/KeySystemConfiguration.js":110,"../vo/NeedKey.js":112}],101:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -27631,7 +28032,7 @@ ClearKey.__dashjs_factory_name = 'ClearKey';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(ClearKey);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"../vo/ClearKeyKeySet.js":100,"../vo/KeyPair.js":103}],97:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"../vo/ClearKeyKeySet.js":105,"../vo/KeyPair.js":108}],102:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -27745,7 +28146,7 @@ DRMToday.__dashjs_factory_name = 'DRMToday';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(DRMToday);
 module.exports = exports['default'];
 
-},{"../../../../externals/base64.js":1,"../../../core/FactoryMaker.js":9}],98:[function(_dereq_,module,exports){
+},{"../../../../externals/base64.js":1,"../../../core/FactoryMaker.js":9}],103:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -27836,7 +28237,7 @@ PlayReady.__dashjs_factory_name = 'PlayReady';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(PlayReady);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9}],99:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9}],104:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -27918,7 +28319,7 @@ Widevine.__dashjs_factory_name = 'Widevine';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(Widevine);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9}],100:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9}],105:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -28021,7 +28422,7 @@ var ClearKeyKeySet = (function () {
 exports['default'] = ClearKeyKeySet;
 module.exports = exports['default'];
 
-},{}],101:[function(_dereq_,module,exports){
+},{}],106:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -28079,7 +28480,7 @@ var KeyError = function KeyError(sessionToken, errorString) {
 exports["default"] = KeyError;
 module.exports = exports["default"];
 
-},{}],102:[function(_dereq_,module,exports){
+},{}],107:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -28142,7 +28543,7 @@ var KeyMessage = function KeyMessage(sessionToken, message, defaultURL, messageT
 exports['default'] = KeyMessage;
 module.exports = exports['default'];
 
-},{}],103:[function(_dereq_,module,exports){
+},{}],108:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -28200,7 +28601,7 @@ var KeyPair = function KeyPair(keyID, key) {
 exports["default"] = KeyPair;
 module.exports = exports["default"];
 
-},{}],104:[function(_dereq_,module,exports){
+},{}],109:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -28262,7 +28663,7 @@ var KeySystemAccess = function KeySystemAccess(keySystem, ksConfiguration) {
 exports["default"] = KeySystemAccess;
 module.exports = exports["default"];
 
-},{}],105:[function(_dereq_,module,exports){
+},{}],110:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -28334,7 +28735,7 @@ var KeySystemConfiguration = function KeySystemConfiguration(audioCapabilities, 
 exports['default'] = KeySystemConfiguration;
 module.exports = exports['default'];
 
-},{}],106:[function(_dereq_,module,exports){
+},{}],111:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -28391,7 +28792,7 @@ var MediaCapability = function MediaCapability(contentType, robustness) {
 exports["default"] = MediaCapability;
 module.exports = exports["default"];
 
-},{}],107:[function(_dereq_,module,exports){
+},{}],112:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -28450,7 +28851,7 @@ function NeedKey(initData, initDataType) {
 exports["default"] = NeedKey;
 module.exports = exports["default"];
 
-},{}],108:[function(_dereq_,module,exports){
+},{}],113:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -28541,7 +28942,7 @@ RulesContext.__dashjs_factory_name = 'RulesContext';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(RulesContext);
 module.exports = exports['default'];
 
-},{"../../core/FactoryMaker.js":9}],109:[function(_dereq_,module,exports){
+},{"../../core/FactoryMaker.js":9}],114:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -28715,7 +29116,7 @@ factory.SYNC_RULE = SYNC_RULE;
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../../core/FactoryMaker.js":9,"./RulesContext.js":108,"./SwitchRequest.js":110,"./abr/ABRRulesCollection.js":111,"./synchronization/SynchronizationRulesCollection.js":122}],110:[function(_dereq_,module,exports){
+},{"../../core/FactoryMaker.js":9,"./RulesContext.js":113,"./SwitchRequest.js":115,"./abr/ABRRulesCollection.js":116,"./synchronization/SynchronizationRulesCollection.js":127}],115:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -28786,7 +29187,7 @@ factory.WEAK = WEAK;
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../../core/FactoryMaker.js":9}],111:[function(_dereq_,module,exports){
+},{"../../core/FactoryMaker.js":9}],116:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -28935,7 +29336,7 @@ factory.ABANDON_FRAGMENT_RULES = ABANDON_FRAGMENT_RULES;
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"../../../dash/DashMetrics.js":15,"../../models/MediaPlayerModel.js":81,"../../models/MetricsModel.js":82,"./AbandonRequestsRule.js":112,"./BolaAbandonRule.js":113,"./BolaRule.js":114,"./BufferOccupancyRule.js":115,"./InsufficientBufferRule.js":116,"./ThroughputRule.js":117}],112:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"../../../dash/DashMetrics.js":15,"../../models/MediaPlayerModel.js":86,"../../models/MetricsModel.js":87,"./AbandonRequestsRule.js":117,"./BolaAbandonRule.js":118,"./BolaRule.js":119,"./BufferOccupancyRule.js":120,"./InsufficientBufferRule.js":121,"./ThroughputRule.js":122}],117:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -29089,7 +29490,7 @@ AbandonRequestsRule.__dashjs_factory_name = 'AbandonRequestsRule';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(AbandonRequestsRule);
 module.exports = exports['default'];
 
-},{"../../../core/Debug.js":7,"../../../core/FactoryMaker.js":9,"../../models/MediaPlayerModel.js":81,"../SwitchRequest.js":110}],113:[function(_dereq_,module,exports){
+},{"../../../core/Debug.js":7,"../../../core/FactoryMaker.js":9,"../../models/MediaPlayerModel.js":86,"../SwitchRequest.js":115}],118:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -29335,7 +29736,7 @@ BolaAbandonRule.__dashjs_factory_name = 'BolaAbandonRule';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(BolaAbandonRule);
 module.exports = exports['default'];
 
-},{"../../../core/Debug.js":7,"../../../core/FactoryMaker.js":9,"../../models/MediaPlayerModel.js":81,"../SwitchRequest.js":110,"./BolaRule.js":114}],114:[function(_dereq_,module,exports){
+},{"../../../core/Debug.js":7,"../../../core/FactoryMaker.js":9,"../../models/MediaPlayerModel.js":86,"../SwitchRequest.js":115,"./BolaRule.js":119}],119:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -29921,7 +30322,7 @@ factory.BOLA_DEBUG = BOLA_DEBUG; // TODO: remove
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../../../core/Debug.js":7,"../../../core/EventBus.js":8,"../../../core/FactoryMaker.js":9,"../../../core/events/Events.js":11,"../../../dash/DashAdapter.js":13,"../../controllers/PlaybackController.js":49,"../../models/MediaPlayerModel.js":81,"../../vo/metrics/HTTPRequest.js":153,"../SwitchRequest.js":110}],115:[function(_dereq_,module,exports){
+},{"../../../core/Debug.js":7,"../../../core/EventBus.js":8,"../../../core/FactoryMaker.js":9,"../../../core/events/Events.js":11,"../../../dash/DashAdapter.js":13,"../../controllers/PlaybackController.js":54,"../../models/MediaPlayerModel.js":86,"../../vo/metrics/HTTPRequest.js":158,"../SwitchRequest.js":115}],120:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -30055,7 +30456,7 @@ BufferOccupancyRule.__dashjs_factory_name = 'BufferOccupancyRule';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(BufferOccupancyRule);
 module.exports = exports['default'];
 
-},{"../../../core/Debug.js":7,"../../../core/FactoryMaker.js":9,"../../controllers/AbrController.js":43,"../../models/MediaPlayerModel.js":81,"../SwitchRequest.js":110}],116:[function(_dereq_,module,exports){
+},{"../../../core/Debug.js":7,"../../../core/FactoryMaker.js":9,"../../controllers/AbrController.js":48,"../../models/MediaPlayerModel.js":86,"../SwitchRequest.js":115}],121:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -30197,7 +30598,7 @@ InsufficientBufferRule.__dashjs_factory_name = 'InsufficientBufferRule';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(InsufficientBufferRule);
 module.exports = exports['default'];
 
-},{"../../../core/Debug.js":7,"../../../core/EventBus.js":8,"../../../core/FactoryMaker.js":9,"../../../core/events/Events.js":11,"../../controllers/BufferController.js":44,"../SwitchRequest.js":110}],117:[function(_dereq_,module,exports){
+},{"../../../core/Debug.js":7,"../../../core/EventBus.js":8,"../../../core/FactoryMaker.js":9,"../../../core/events/Events.js":11,"../../controllers/BufferController.js":49,"../SwitchRequest.js":115}],122:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -30386,7 +30787,7 @@ ThroughputRule.__dashjs_factory_name = 'ThroughputRule';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(ThroughputRule);
 module.exports = exports['default'];
 
-},{"../../../core/Debug.js":7,"../../../core/FactoryMaker.js":9,"../../controllers/AbrController.js":43,"../../controllers/BufferController.js":44,"../../models/MediaPlayerModel.js":81,"../../vo/metrics/HTTPRequest.js":153,"../SwitchRequest.js":110}],118:[function(_dereq_,module,exports){
+},{"../../../core/Debug.js":7,"../../../core/FactoryMaker.js":9,"../../controllers/AbrController.js":48,"../../controllers/BufferController.js":49,"../../models/MediaPlayerModel.js":86,"../../vo/metrics/HTTPRequest.js":158,"../SwitchRequest.js":115}],123:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -30461,10 +30862,8 @@ function BufferLevelRule(config) {
         var mediaType = mediaInfo.type;
         var metrics = metricsModel.getReadOnlyMetricsFor(mediaType);
         var bufferLevel = dashMetrics.getCurrentBufferLevel(metrics);
-        var fragmentCount = undefined;
 
-        fragmentCount = bufferLevel < getBufferTarget(streamProcessor, mediaType) ? 1 : 0;
-        return fragmentCount === 1;
+        return bufferLevel < getBufferTarget(streamProcessor, mediaType);
     }
 
     function reset() {}
@@ -30503,7 +30902,7 @@ BufferLevelRule.__dashjs_factory_name = 'BufferLevelRule';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(BufferLevelRule);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"../../controllers/PlaybackController.js":49,"../../models/MediaPlayerModel.js":81}],119:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"../../controllers/PlaybackController.js":54,"../../models/MediaPlayerModel.js":86}],124:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -30534,6 +30933,7 @@ module.exports = exports['default'];
  *  ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
  *  POSSIBILITY OF SUCH DAMAGE.
  */
+//import Debug from '../../../core/Debug.js';
 'use strict';
 
 Object.defineProperty(exports, '__esModule', {
@@ -30542,10 +30942,6 @@ Object.defineProperty(exports, '__esModule', {
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
 
-var _coreDebugJs = _dereq_('../../../core/Debug.js');
-
-var _coreDebugJs2 = _interopRequireDefault(_coreDebugJs);
-
 var _coreFactoryMakerJs = _dereq_('../../../core/FactoryMaker.js');
 
 var _coreFactoryMakerJs2 = _interopRequireDefault(_coreFactoryMakerJs);
@@ -30553,11 +30949,11 @@ var _coreFactoryMakerJs2 = _interopRequireDefault(_coreFactoryMakerJs);
 function NextFragmentRequestRule(config) {
 
     var instance = undefined;
-    var context = this.context;
-    var log = (0, _coreDebugJs2['default'])(context).getInstance().log;
+    //let context = this.context;
+    //let log = Debug(context).getInstance().log;
     var adapter = config.adapter;
-    var sourceBufferController = config.sourceBufferController;
-    var virtualBuffer = config.virtualBuffer;
+    //let sourceBufferController = config.sourceBufferController;
+    //let virtualBuffer = config.virtualBuffer;
     var textSourceBuffer = config.textSourceBuffer;
 
     function execute(streamProcessor) {
@@ -30565,15 +30961,15 @@ function NextFragmentRequestRule(config) {
         var representationInfo = streamProcessor.getCurrentRepresentationInfo();
         var mediaInfo = representationInfo.mediaInfo;
         var mediaType = mediaInfo.type;
-        var streamId = mediaInfo.streamInfo.id;
+        //let streamId = mediaInfo.streamInfo.id;
         var scheduleController = streamProcessor.getScheduleController();
         var seekTarget = scheduleController.getSeekTarget();
         var hasSeekTarget = !isNaN(seekTarget);
         var keepIdx = !hasSeekTarget;
         var time = hasSeekTarget ? seekTarget : adapter.getIndexHandlerTime(streamProcessor);
-        var buffer = streamProcessor.getBuffer();
-        var range = null;
-        var appendedChunks = undefined;
+        //let buffer = streamProcessor.getBuffer();
+        //let range = null;
+        //let appendedChunks;
         var request = undefined;
 
         if (isNaN(time) || mediaType === 'fragmentedText' && textSourceBuffer.getAllTracksAreDisabled()) {
@@ -30584,17 +30980,21 @@ function NextFragmentRequestRule(config) {
             scheduleController.setSeekTarget(NaN);
         }
 
+        /**
+         * https://github.com/Dash-Industry-Forum/dash.js/issues/1218
+         * Leaving this code in but commented out for now. Does not seem to be needed anymore and was a hack in the first place.
         if (buffer) {
             range = sourceBufferController.getBufferRange(streamProcessor.getBuffer(), time);
             if (range !== null) {
-                appendedChunks = virtualBuffer.getChunks({ streamId: streamId, mediaType: mediaType, appended: true, mediaInfo: mediaInfo, forRange: range });
+                appendedChunks = virtualBuffer.getChunks({streamId: streamId, mediaType: mediaType, appended: true, mediaInfo: mediaInfo, forRange: range});
                 if (appendedChunks && appendedChunks.length > 0) {
-                    var t = time;
+                    let t = time;
                     time = appendedChunks[appendedChunks.length - 1].bufferedRange.end;
-                    log('Prior to making a request for time, NextFragmentRequestRule is aligning index handler\'s currentTime with bufferedRange.end.', t, ' was changed to ', time);
+                    log('Prior to making a request for time, NextFragmentRequestRule is aligning index handler\'s currentTime with bufferedRange.end.',  t, ' was changed to ', time);
                 }
             }
         }
+        */
 
         request = adapter.getFragmentRequestForTime(streamProcessor, representationInfo, time, { keepIdx: keepIdx });
         //log("getForTime", request, time);
@@ -30623,7 +31023,7 @@ NextFragmentRequestRule.__dashjs_factory_name = 'NextFragmentRequestRule';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(NextFragmentRequestRule);
 module.exports = exports['default'];
 
-},{"../../../core/Debug.js":7,"../../../core/FactoryMaker.js":9}],120:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9}],125:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -30871,7 +31271,7 @@ LiveEdgeBinarySearchRule.__dashjs_factory_name = 'LiveEdgeBinarySearchRule';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(LiveEdgeBinarySearchRule);
 module.exports = exports['default'];
 
-},{"../../../core/EventBus.js":8,"../../../core/FactoryMaker.js":9,"../../../core/events/Events.js":11,"../SwitchRequest.js":110}],121:[function(_dereq_,module,exports){
+},{"../../../core/EventBus.js":8,"../../../core/FactoryMaker.js":9,"../../../core/events/Events.js":11,"../SwitchRequest.js":115}],126:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -30960,7 +31360,7 @@ LiveEdgeWithTimeSynchronizationRule.__dashjs_factory_name = 'LiveEdgeWithTimeSyn
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(LiveEdgeWithTimeSynchronizationRule);
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"../SwitchRequest.js":110}],122:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"../SwitchRequest.js":115}],127:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -31071,7 +31471,7 @@ factory.BEST_GUESS_RULES = BEST_GUESS_RULES;
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../../../core/FactoryMaker.js":9,"../../../dash/DashAdapter.js":13,"../../../dash/utils/TimelineConverter.js":21,"./LiveEdgeBinarySearchRule.js":120,"./LiveEdgeWithTimeSynchronizationRule.js":121}],123:[function(_dereq_,module,exports){
+},{"../../../core/FactoryMaker.js":9,"../../../dash/DashAdapter.js":13,"../../../dash/utils/TimelineConverter.js":25,"./LiveEdgeBinarySearchRule.js":125,"./LiveEdgeWithTimeSynchronizationRule.js":126}],128:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -31158,7 +31558,7 @@ BoxParser.__dashjs_factory_name = 'BoxParser';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(BoxParser);
 module.exports = exports['default'];
 
-},{"../../core/FactoryMaker.js":9,"./IsoFile.js":128,"codem-isoboxer":6}],124:[function(_dereq_,module,exports){
+},{"../../core/FactoryMaker.js":9,"./IsoFile.js":133,"codem-isoboxer":6}],129:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -31256,7 +31656,7 @@ Capabilities.__dashjs_factory_name = 'Capabilities';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(Capabilities);
 module.exports = exports['default'];
 
-},{"../../core/FactoryMaker.js":9}],125:[function(_dereq_,module,exports){
+},{"../../core/FactoryMaker.js":9}],130:[function(_dereq_,module,exports){
 /**
 * The copyright in this software is being made available under the BSD License,
 * included below. This software may be subject to other third party and contributor
@@ -31415,7 +31815,7 @@ CustomTimeRanges.__dashjs_factory_name = 'CustomTimeRanges';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(CustomTimeRanges);
 module.exports = exports['default'];
 
-},{"../../core/FactoryMaker.js":9}],126:[function(_dereq_,module,exports){
+},{"../../core/FactoryMaker.js":9}],131:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -31606,7 +32006,7 @@ factory.LOCAL_STORAGE_VIDEO_SETTINGS_KEY = LOCAL_STORAGE_VIDEO_SETTINGS_KEY;
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../../core/Debug.js":7,"../../core/FactoryMaker.js":9,"../models/MediaPlayerModel.js":81}],127:[function(_dereq_,module,exports){
+},{"../../core/Debug.js":7,"../../core/FactoryMaker.js":9,"../models/MediaPlayerModel.js":86}],132:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -31742,7 +32142,7 @@ factory.TIMED_TEXT_ERROR_ID_PARSE = TIMED_TEXT_ERROR_ID_PARSE;
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11}],128:[function(_dereq_,module,exports){
+},{"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11}],133:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -32005,7 +32405,7 @@ IsoFile.__dashjs_factory_name = 'IsoFile';
 exports['default'] = _coreFactoryMakerJs2['default'].getClassFactory(IsoFile);
 module.exports = exports['default'];
 
-},{"../../core/FactoryMaker.js":9,"../vo/IsoBox.js":139}],129:[function(_dereq_,module,exports){
+},{"../../core/FactoryMaker.js":9,"../vo/IsoBox.js":144}],134:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -32155,7 +32555,7 @@ factory.LIVE_EDGE_NOT_FOUND_ERROR_CODE = LIVE_EDGE_NOT_FOUND_ERROR_CODE;
 exports['default'] = factory;
 module.exports = exports['default'];
 
-},{"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../rules/RulesController.js":109,"../rules/synchronization/SynchronizationRulesCollection.js":122,"../vo/Error.js":136}],130:[function(_dereq_,module,exports){
+},{"../../core/EventBus.js":8,"../../core/FactoryMaker.js":9,"../../core/events/Events.js":11,"../rules/RulesController.js":114,"../rules/synchronization/SynchronizationRulesCollection.js":127,"../vo/Error.js":141}],135:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -32223,7 +32623,7 @@ RequestModifier.__dashjs_factory_name = 'RequestModifier';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(RequestModifier);
 module.exports = exports['default'];
 
-},{"../../core/FactoryMaker.js":9}],131:[function(_dereq_,module,exports){
+},{"../../core/FactoryMaker.js":9}],136:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -32330,6 +32730,8 @@ function TTMLParser() {
             // body in tt
         type = undefined;
 
+        var errorMsg = '';
+
         var converter = new _externalsXml2jsonJs2['default']([], '', false);
 
         // Parse the TTML in a JSON object.
@@ -32405,235 +32807,243 @@ function TTMLParser() {
 
             // Check if cues is not empty or undefined.
             if (!cues || cues.length === 0) {
-                var errorMsg = 'TTML document does not contain any cues';
-                throw errorMsg;
-            }
+                errorMsg = 'TTML document does not contain any cues';
+            } else {
 
-            /*** Parsing of every cue.
-             *
-             * cues: List of the cues found in the ttml parsing.
-             *       We iterate on this list.
-             * cue: Every cue is parsed individually and creates an HTML element with its style and children.
-             *
-             * pElements: all the nodes that can be found in the paragraph.
-             *
-             * ***/
+                /*** Parsing of every cue.
+                 *
+                 * cues: List of the cues found in the ttml parsing.
+                 *       We iterate on this list.
+                 * cue: Every cue is parsed individually and creates an HTML element with its style and children.
+                 *
+                 * pElements: all the nodes that can be found in the paragraph.
+                 *
+                 * ***/
 
-            // Caption array is the final result return containing all the cues' information.
-            var pStartTime;
-            var pEndTime;
-            var spanStartTime;
-            var spanEndTime;
-            cues.forEach(function (cue) {
+                // Caption array is the final result return containing all the cues' information.
+                var pStartTime;
+                var pEndTime;
+                var spanStartTime;
+                var spanEndTime;
+                cues.forEach(function (cue) {
 
-                // Obtain the start and end time of the cue.
-                if (cue.hasOwnProperty('begin') && cue.hasOwnProperty('end')) {
-                    pStartTime = parseTimings(cue.begin);
-                    pEndTime = parseTimings(cue.end);
-                } else if (cue.span.hasOwnProperty('begin') && cue.span.hasOwnProperty('end')) {
-                    spanStartTime = parseTimings(cue.span.begin);
-                    spanEndTime = parseTimings(cue.span.end);
-                } else {
-                    errorMsg = 'TTML document has incorrect timing value';
-                    throw errorMsg;
-                }
-                var cueStartTime = spanStartTime || pStartTime;
-                var cueEndTime = spanEndTime || pEndTime;
-
-                if (typeof intervalStart !== 'undefined' && typeof intervalEnd !== 'undefined') {
-                    if (cueEndTime < intervalStart || cueStartTime > intervalEnd) {
-                        log('TTML: Cue interval ' + cueStartTime + '-' + cueEndTime + ' outside sample interval ' + intervalStart + '-' + intervalEnd + '. Dropped');
-                        return;
+                    // Obtain the start and end time of the cue.
+                    if (cue.hasOwnProperty('begin') && cue.hasOwnProperty('end')) {
+                        pStartTime = parseTimings(cue.begin);
+                        pEndTime = parseTimings(cue.end);
+                    } else if (cue.span.hasOwnProperty('begin') && cue.span.hasOwnProperty('end')) {
+                        spanStartTime = parseTimings(cue.span.begin);
+                        spanEndTime = parseTimings(cue.span.end);
                     } else {
-                        var clipped = false;
-                        var origStart = cueStartTime;
-                        var origEnd = cueEndTime;
-                        if (cueStartTime < intervalStart) {
-                            clipped = true;
-                            cueStartTime = intervalStart;
-                        }
-                        if (cueEndTime > intervalEnd) {
-                            clipped = true;
-                            cueEndTime = intervalEnd;
-                        }
-                        if (clipped) {
-                            log('TTML: Clipped cue ' + origStart + '-' + origEnd + ' to ' + cueStartTime + '-' + cueEndTime);
-                        }
-                    }
-                }
-
-                if (cue['smpte:backgroundImage'] !== undefined) {
-                    var images = ttml.tt.head.metadata.image_asArray;
-                    for (var j = 0; j < images.length; j++) {
-                        if ('#' + images[j]['xml:id'] == cue['smpte:backgroundImage']) {
-                            captionArray.push({
-                                start: cueStartTime,
-                                end: cueEndTime,
-                                id: images[j]['xml:id'],
-                                data: 'data:image/' + images[j].imagetype.toLowerCase() + ';base64, ' + images[j].__text,
-                                type: 'image'
-                            });
-                        }
-                    }
-                } else if (type === 'html') {
-                    lineHeight = {};
-                    linePadding = {};
-                    fontSize = {};
-                    var cueID = '';
-                    if (cue.hasOwnProperty('id') || cue.hasOwnProperty('xml:id')) {
-                        cueID = cue['xml:id'] || cue.id;
-                    }
-                    // Error if timing is not specified.
-                    // TODO: check with the specification what is allowed.
-                    if ((isNaN(pStartTime) || isNaN(pEndTime)) && (isNaN(spanStartTime) || isNaN(spanEndTime))) {
                         errorMsg = 'TTML document has incorrect timing value';
                         throw errorMsg;
                     }
+                    var cueStartTime = spanStartTime || pStartTime;
+                    var cueEndTime = spanEndTime || pEndTime;
 
-                    /**
-                     * Find the region defined for the cue.
-                     */
-                    // properties to be put in the "captionRegion" HTML element.
-                    var cueRegionProperties = constructCueRegion(cue, div.div, cellUnit);
-
-                    /**
-                     * Find the style defined for the cue.
-                     */
-                    // properties to be put in the "paragraph" HTML element.
-                    var cueStyleProperties = constructCueStyle(cue, cellUnit);
-
-                    /**
-                     * /!\ Create the cue HTML Element containing the whole cue.
-                     */
-                    var styleIDs = cueStyleProperties[1];
-                    cueStyleProperties = cueStyleProperties[0];
-
-                    // Final cue HTML element.
-                    var cueParagraph = document.createElement('div');
-                    cueParagraph.className = styleIDs;
-
-                    // Stock the element in the subtitle (in p) in an array (in case there are only one value).
-                    var pElements = cue.__children;
-
-                    // Create an wrapper containing the cue information about unicodeBidi and direction
-                    // as they need to be defined on at this level.
-                    // We append to the wrapper the cue itself.
-                    var cueDirUniWrapper = constructCue(pElements, cellUnit);
-                    cueDirUniWrapper.className = 'cueDirUniWrapper';
-
-                    // If the style defines these two properties, we place them in cueContainer
-                    // and delete them from the cue style so it is not added afterwards to the final cue.
-                    if (arrayContains('unicode-bidi', cueStyleProperties)) {
-                        cueDirUniWrapper.style.cssText += getPropertyFromArray('unicode-bidi', cueStyleProperties);
-                        deletePropertyFromArray('unicode-bidi', cueStyleProperties);
-                    }
-                    if (arrayContains('direction', cueStyleProperties)) {
-                        cueDirUniWrapper.style.cssText += getPropertyFromArray('direction', cueStyleProperties);
-                        deletePropertyFromArray('direction', cueStyleProperties);
-                    }
-
-                    // Apply the linePadding property if it is specified in the cue style.
-                    if (arrayContains('padding-left', cueStyleProperties) && arrayContains('padding-right', cueStyleProperties)) {
-                        cueDirUniWrapper.innerHTML = applyLinePadding(cueDirUniWrapper, cueStyleProperties);
-                    }
-
-                    /**
-                     * Clean and set the style and region for the cue to be returned.
-                     */
-
-                    // Remove the line padding property from being added at the "paragraph" element level.
-                    if (arrayContains('padding-left', cueStyleProperties) && arrayContains('padding-right', cueStyleProperties)) {
-                        deletePropertyFromArray('padding-left', cueStyleProperties);
-                        deletePropertyFromArray('padding-right', cueStyleProperties);
-                    }
-
-                    // Remove the ID of the region from being added at the "paragraph" element level.
-                    var regionID = '';
-                    if (arrayContains('regionID', cueRegionProperties)) {
-                        var wholeRegionID = getPropertyFromArray('regionID', cueRegionProperties);
-                        regionID = wholeRegionID.slice(wholeRegionID.indexOf(':') + 1, wholeRegionID.length - 1);
-                    }
-
-                    // We link the p style to the finale cueParagraph element.
-                    if (cueStyleProperties) {
-                        cueParagraph.style.cssText = cueStyleProperties.join(' ') + 'display:flex;';
-                    }
-                    // We define the CSS style for the cue region.
-                    if (cueRegionProperties) {
-                        cueRegionProperties = cueRegionProperties.join(' ');
-                    }
-
-                    // We then place the cue wrapper inside the paragraph element.
-                    cueParagraph.appendChild(cueDirUniWrapper);
-
-                    // Final cue.
-                    var finalCue = document.createElement('div');
-                    finalCue.appendChild(cueParagraph);
-                    finalCue.id = 'subtitle_' + cueID;
-                    finalCue.style.cssText = 'position: absolute; margin: 0; display: flex; box-sizing: border-box; pointer-events: none;' + cueRegionProperties;
-
-                    if (Object.keys(fontSize).length === 0) {
-                        fontSize.defaultFontSize = '100';
-                    }
-
-                    // We add all the cue information in captionArray.
-                    captionArray.push({
-                        start: cueStartTime,
-                        end: cueEndTime,
-                        type: 'html',
-                        cueHTMLElement: finalCue,
-                        regions: regions,
-                        regionID: regionID,
-                        cueID: cueID,
-                        videoHeight: videoHeight,
-                        videoWidth: videoWidth,
-                        cellResolution: cellResolution,
-                        fontSize: fontSize || {
-                            defaultFontSize: '100'
-                        },
-                        lineHeight: lineHeight,
-                        linePadding: linePadding
-                    });
-                } else {
-                    var text = '';
-                    var textElements = cue.__children;
-                    if (textElements.length) {
-                        textElements.forEach(function (el) {
-                            if (el.hasOwnProperty('span')) {
-                                var spanElements = el.span.__children;
-                                spanElements.forEach(function (spanEl) {
-                                    // If metadata is present, do not process.
-                                    if (spanElements.hasOwnProperty('metadata')) {
-                                        return;
-                                    }
-                                    // If the element is a string
-                                    if (spanEl.hasOwnProperty('#text')) {
-                                        text += spanEl['#text'].replace(/[\r\n]+/gm, ' ').trim();
-                                        // If the element is a 'br' tag
-                                    } else if ('br' in spanEl) {
-                                            // Create a br element.
-                                            text += '\n';
-                                        }
-                                });
-                            } else if (el.hasOwnProperty('br')) {
-                                text += '\n';
-                            } else {
-                                text += el['#text'].replace(/[\r\n]+/gm, ' ').trim();
+                    if (typeof intervalStart !== 'undefined' && typeof intervalEnd !== 'undefined') {
+                        if (cueEndTime < intervalStart || cueStartTime > intervalEnd) {
+                            log('TTML: Cue interval ' + cueStartTime + '-' + cueEndTime + ' outside sample interval ' + intervalStart + '-' + intervalEnd + '. Dropped');
+                            return;
+                        } else {
+                            var clipped = false;
+                            var origStart = cueStartTime;
+                            var origEnd = cueEndTime;
+                            if (cueStartTime < intervalStart) {
+                                clipped = true;
+                                cueStartTime = intervalStart;
                             }
+                            if (cueEndTime > intervalEnd) {
+                                clipped = true;
+                                cueEndTime = intervalEnd;
+                            }
+                            if (clipped) {
+                                log('TTML: Clipped cue ' + origStart + '-' + origEnd + ' to ' + cueStartTime + '-' + cueEndTime);
+                            }
+                        }
+                    }
+
+                    if (cue['smpte:backgroundImage'] !== undefined) {
+                        var images = ttml.tt.head.metadata.image_asArray;
+                        for (var j = 0; j < images.length; j++) {
+                            if ('#' + images[j]['xml:id'] == cue['smpte:backgroundImage']) {
+                                captionArray.push({
+                                    start: cueStartTime,
+                                    end: cueEndTime,
+                                    id: images[j]['xml:id'],
+                                    data: 'data:image/' + images[j].imagetype.toLowerCase() + ';base64, ' + images[j].__text,
+                                    type: 'image'
+                                });
+                            }
+                        }
+                    } else if (type === 'html') {
+                        lineHeight = {};
+                        linePadding = {};
+                        fontSize = {};
+                        var cueID = '';
+                        if (cue.hasOwnProperty('id') || cue.hasOwnProperty('xml:id')) {
+                            cueID = cue['xml:id'] || cue.id;
+                        }
+                        // Error if timing is not specified.
+                        // TODO: check with the specification what is allowed.
+                        if ((isNaN(pStartTime) || isNaN(pEndTime)) && (isNaN(spanStartTime) || isNaN(spanEndTime))) {
+                            errorMsg = 'TTML document has incorrect timing value';
+                            throw errorMsg;
+                        }
+
+                        /**
+                         * Find the region defined for the cue.
+                         */
+                        // properties to be put in the "captionRegion" HTML element.
+                        var cueRegionProperties = constructCueRegion(cue, div.div, cellUnit);
+
+                        /**
+                         * Find the style defined for the cue.
+                         */
+                        // properties to be put in the "paragraph" HTML element.
+                        var cueStyleProperties = constructCueStyle(cue, cellUnit);
+
+                        /**
+                         * /!\ Create the cue HTML Element containing the whole cue.
+                         */
+                        var styleIDs = cueStyleProperties[1];
+                        cueStyleProperties = cueStyleProperties[0];
+
+                        // Final cue HTML element.
+                        var cueParagraph = document.createElement('div');
+                        cueParagraph.className = styleIDs;
+
+                        // Stock the element in the subtitle (in p) in an array (in case there are only one value).
+                        var pElements = cue.__children;
+
+                        // Create an wrapper containing the cue information about unicodeBidi and direction
+                        // as they need to be defined on at this level.
+                        // We append to the wrapper the cue itself.
+                        var cueDirUniWrapper = constructCue(pElements, cellUnit);
+                        cueDirUniWrapper.className = 'cueDirUniWrapper';
+
+                        // If the style defines these two properties, we place them in cueContainer
+                        // and delete them from the cue style so it is not added afterwards to the final cue.
+                        if (arrayContains('unicode-bidi', cueStyleProperties)) {
+                            cueDirUniWrapper.style.cssText += getPropertyFromArray('unicode-bidi', cueStyleProperties);
+                            deletePropertyFromArray('unicode-bidi', cueStyleProperties);
+                        }
+                        if (arrayContains('direction', cueStyleProperties)) {
+                            cueDirUniWrapper.style.cssText += getPropertyFromArray('direction', cueStyleProperties);
+                            deletePropertyFromArray('direction', cueStyleProperties);
+                        }
+
+                        // Apply the linePadding property if it is specified in the cue style.
+                        if (arrayContains('padding-left', cueStyleProperties) && arrayContains('padding-right', cueStyleProperties)) {
+                            cueDirUniWrapper.innerHTML = applyLinePadding(cueDirUniWrapper, cueStyleProperties);
+                        }
+
+                        /**
+                         * Clean and set the style and region for the cue to be returned.
+                         */
+
+                        // Remove the line padding property from being added at the "paragraph" element level.
+                        if (arrayContains('padding-left', cueStyleProperties) && arrayContains('padding-right', cueStyleProperties)) {
+                            deletePropertyFromArray('padding-left', cueStyleProperties);
+                            deletePropertyFromArray('padding-right', cueStyleProperties);
+                        }
+
+                        // Remove the ID of the region from being added at the "paragraph" element level.
+                        var regionID = '';
+                        if (arrayContains('regionID', cueRegionProperties)) {
+                            var wholeRegionID = getPropertyFromArray('regionID', cueRegionProperties);
+                            regionID = wholeRegionID.slice(wholeRegionID.indexOf(':') + 1, wholeRegionID.length - 1);
+                        }
+
+                        // We link the p style to the finale cueParagraph element.
+                        if (cueStyleProperties) {
+                            cueParagraph.style.cssText = cueStyleProperties.join(' ') + 'display:flex;';
+                        }
+                        // We define the CSS style for the cue region.
+                        if (cueRegionProperties) {
+                            cueRegionProperties = cueRegionProperties.join(' ');
+                        }
+
+                        // We then place the cue wrapper inside the paragraph element.
+                        cueParagraph.appendChild(cueDirUniWrapper);
+
+                        // Final cue.
+                        var finalCue = document.createElement('div');
+                        finalCue.appendChild(cueParagraph);
+                        finalCue.id = 'subtitle_' + cueID;
+                        finalCue.style.cssText = 'position: absolute; margin: 0; display: flex; box-sizing: border-box; pointer-events: none;' + cueRegionProperties;
+
+                        if (Object.keys(fontSize).length === 0) {
+                            fontSize.defaultFontSize = '100';
+                        }
+
+                        // We add all the cue information in captionArray.
+                        captionArray.push({
+                            start: cueStartTime,
+                            end: cueEndTime,
+                            type: 'html',
+                            cueHTMLElement: finalCue,
+                            regions: regions,
+                            regionID: regionID,
+                            cueID: cueID,
+                            videoHeight: videoHeight,
+                            videoWidth: videoWidth,
+                            cellResolution: cellResolution,
+                            fontSize: fontSize || {
+                                defaultFontSize: '100'
+                            },
+                            lineHeight: lineHeight,
+                            linePadding: linePadding
+                        });
+                    } else {
+                        var text = '';
+                        var textElements = cue.__children;
+                        if (textElements.length) {
+                            textElements.forEach(function (el) {
+                                if (el.hasOwnProperty('span')) {
+                                    var spanElements = el.span.__children;
+                                    spanElements.forEach(function (spanEl) {
+                                        // If metadata is present, do not process.
+                                        if (spanElements.hasOwnProperty('metadata')) {
+                                            return;
+                                        }
+                                        // If the element is a string
+                                        if (spanEl.hasOwnProperty('#text')) {
+                                            text += spanEl['#text'].replace(/[\r\n]+/gm, ' ').trim();
+                                            // If the element is a 'br' tag
+                                        } else if ('br' in spanEl) {
+                                                // Create a br element.
+                                                text += '\n';
+                                            }
+                                    });
+                                } else if (el.hasOwnProperty('br')) {
+                                    text += '\n';
+                                } else {
+                                    text += el['#text'].replace(/[\r\n]+/gm, ' ').trim();
+                                }
+                            });
+                        }
+
+                        captionArray.push({
+                            start: cueStartTime,
+                            end: cueEndTime,
+                            data: text,
+                            type: 'text'
                         });
                     }
-
-                    captionArray.push({
-                        start: cueStartTime,
-                        end: cueEndTime,
-                        data: text,
-                        type: 'text'
-                    });
-                }
-            });
+                });
+            }
         });
 
-        return captionArray;
+        if (errorMsg !== '') {
+            log(errorMsg);
+        }
+
+        if (captionArray.length > 0) {
+            return captionArray;
+        } else {
+            throw errorMsg;
+        }
     }
 
     function setup() {
@@ -33420,7 +33830,7 @@ TTMLParser.__dashjs_factory_name = 'TTMLParser';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(TTMLParser);
 module.exports = exports['default'];
 
-},{"../../../externals/xml2json.js":4,"../../core/Debug.js":7,"../../core/FactoryMaker.js":9}],132:[function(_dereq_,module,exports){
+},{"../../../externals/xml2json.js":4,"../../core/Debug.js":7,"../../core/FactoryMaker.js":9}],137:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -33505,7 +33915,7 @@ URLUtils.__dashjs_factory_name = 'URLUtils';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(URLUtils);
 module.exports = exports['default'];
 
-},{"../../core/FactoryMaker.js":9}],133:[function(_dereq_,module,exports){
+},{"../../core/FactoryMaker.js":9}],138:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -33707,7 +34117,7 @@ VTTParser.__dashjs_factory_name = 'VTTParser';
 exports['default'] = _coreFactoryMakerJs2['default'].getSingletonFactory(VTTParser);
 module.exports = exports['default'];
 
-},{"../../core/Debug.js":7,"../../core/FactoryMaker.js":9}],134:[function(_dereq_,module,exports){
+},{"../../core/Debug.js":7,"../../core/FactoryMaker.js":9}],139:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -33763,7 +34173,7 @@ var BitrateInfo = function BitrateInfo() {
 exports["default"] = BitrateInfo;
 module.exports = exports["default"];
 
-},{}],135:[function(_dereq_,module,exports){
+},{}],140:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -33826,7 +34236,7 @@ function DataChunk() {
 exports["default"] = DataChunk;
 module.exports = exports["default"];
 
-},{}],136:[function(_dereq_,module,exports){
+},{}],141:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -33880,7 +34290,7 @@ var Error = function Error(code, message, data) {
 exports["default"] = Error;
 module.exports = exports["default"];
 
-},{}],137:[function(_dereq_,module,exports){
+},{}],142:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -33955,7 +34365,7 @@ FragmentRequest.ACTION_COMPLETE = 'complete';
 exports['default'] = FragmentRequest;
 module.exports = exports['default'];
 
-},{}],138:[function(_dereq_,module,exports){
+},{}],143:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -34025,7 +34435,7 @@ var HeadRequest = (function (_FragmentRequest) {
 exports['default'] = HeadRequest;
 module.exports = exports['default'];
 
-},{"./FragmentRequest.js":137}],139:[function(_dereq_,module,exports){
+},{"./FragmentRequest.js":142}],144:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -34080,7 +34490,7 @@ var IsoBox = function IsoBox() {
 exports["default"] = IsoBox;
 module.exports = exports["default"];
 
-},{}],140:[function(_dereq_,module,exports){
+},{}],145:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -34138,7 +34548,7 @@ var ManifestInfo = function ManifestInfo() {
 exports["default"] = ManifestInfo;
 module.exports = exports["default"];
 
-},{}],141:[function(_dereq_,module,exports){
+},{}],146:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -34205,7 +34615,7 @@ var MediaInfo = function MediaInfo() {
 exports["default"] = MediaInfo;
 module.exports = exports["default"];
 
-},{}],142:[function(_dereq_,module,exports){
+},{}],147:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -34269,7 +34679,7 @@ var MetricsList = function MetricsList() {
 exports["default"] = MetricsList;
 module.exports = exports["default"];
 
-},{}],143:[function(_dereq_,module,exports){
+},{}],148:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -34326,7 +34736,7 @@ var StreamInfo = function StreamInfo() {
 exports["default"] = StreamInfo;
 module.exports = exports["default"];
 
-},{}],144:[function(_dereq_,module,exports){
+},{}],149:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -34398,7 +34808,7 @@ var TextRequest = (function (_FragmentRequest) {
 exports['default'] = TextRequest;
 module.exports = exports['default'];
 
-},{"./FragmentRequest.js":137}],145:[function(_dereq_,module,exports){
+},{"./FragmentRequest.js":142}],150:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -34457,7 +34867,7 @@ var TextTrackInfo = function TextTrackInfo() {
 exports["default"] = TextTrackInfo;
 module.exports = exports["default"];
 
-},{}],146:[function(_dereq_,module,exports){
+},{}],151:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -34514,7 +34924,7 @@ var TrackInfo = function TrackInfo() {
 exports["default"] = TrackInfo;
 module.exports = exports["default"];
 
-},{}],147:[function(_dereq_,module,exports){
+},{}],152:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -34586,7 +34996,7 @@ exports["default"] = URIFragmentData;
 */
 module.exports = exports["default"];
 
-},{}],148:[function(_dereq_,module,exports){
+},{}],153:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -34642,7 +35052,7 @@ var BolaState = function BolaState() {
 exports["default"] = BolaState;
 module.exports = exports["default"];
 
-},{}],149:[function(_dereq_,module,exports){
+},{}],154:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -34709,7 +35119,7 @@ function BufferLevel() {
 exports["default"] = BufferLevel;
 module.exports = exports["default"];
 
-},{}],150:[function(_dereq_,module,exports){
+},{}],155:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -34780,7 +35190,7 @@ function BufferState() {
 exports['default'] = BufferState;
 module.exports = exports['default'];
 
-},{"../../controllers/BufferController.js":44}],151:[function(_dereq_,module,exports){
+},{"../../controllers/BufferController.js":49}],156:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -34850,7 +35260,7 @@ function DVRInfo() {
 exports["default"] = DVRInfo;
 module.exports = exports["default"];
 
-},{}],152:[function(_dereq_,module,exports){
+},{}],157:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -34914,7 +35324,7 @@ function DroppedFrames() {
 exports["default"] = DroppedFrames;
 module.exports = exports["default"];
 
-},{}],153:[function(_dereq_,module,exports){
+},{}],158:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -35083,7 +35493,7 @@ HTTPRequest.OTHER_TYPE = 'other';
 exports['default'] = HTTPRequest;
 module.exports = exports['default'];
 
-},{}],154:[function(_dereq_,module,exports){
+},{}],159:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -35279,7 +35689,7 @@ ManifestUpdate.TrackInfo = (function () {
 exports["default"] = ManifestUpdate;
 module.exports = exports["default"];
 
-},{}],155:[function(_dereq_,module,exports){
+},{}],160:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -35433,7 +35843,7 @@ PlayList.Trace.FAILURE_STOP_REASON = 'failure';
 exports['default'] = PlayList;
 module.exports = exports['default'];
 
-},{}],156:[function(_dereq_,module,exports){
+},{}],161:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -35513,7 +35923,7 @@ function RepresentationSwitch() {
 exports["default"] = RepresentationSwitch;
 module.exports = exports["default"];
 
-},{}],157:[function(_dereq_,module,exports){
+},{}],162:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -35578,7 +35988,7 @@ function RequestsQueue() {
 exports["default"] = RequestsQueue;
 module.exports = exports["default"];
 
-},{}],158:[function(_dereq_,module,exports){
+},{}],163:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
@@ -35679,7 +36089,7 @@ function SchedulingInfo() {
 exports["default"] = SchedulingInfo;
 module.exports = exports["default"];
 
-},{}],159:[function(_dereq_,module,exports){
+},{}],164:[function(_dereq_,module,exports){
 /**
  * The copyright in this software is being made available under the BSD License,
  * included below. This software may be subject to other third party and contributor
