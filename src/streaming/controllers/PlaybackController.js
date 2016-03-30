@@ -59,6 +59,7 @@ function PlaybackController() {
         streamInfo,
         isDynamic,
         mediaPlayerModel,
+        initialSeekCompleted,
         playOnceInitialized;
 
     function setup() {
@@ -66,8 +67,9 @@ function PlaybackController() {
         liveStartTime = NaN;
         wallclockTimeIntervalId = null;
         isDynamic = null;
-        commonEarliestTime = {};
+        initialSeekCompleted = false;
         playOnceInitialized = false;
+        commonEarliestTime = {};
         mediaPlayerModel = MediaPlayerModel(context).getInstance();
     }
 
@@ -169,22 +171,32 @@ function PlaybackController() {
     }
 
     /**
-     * Gets a desirable delay for the live edge to avoid a risk of getting 404 when playing at the bleeding edge
+     * Computes the desirable delay for the live edge to avoid a risk of getting 404 when playing at the bleeding edge
      * @returns {Number} object
      * @memberof PlaybackController#
      * */
-    function getLiveDelay(fragmentDuration) {
-        var delay;
+    function computeLiveDelay(fragmentDuration, dvrWindowSize) {
         var mpd = dashManifestModel.getMpd(manifestModel.getValue());
+
+        let delay;
+        const END_OF_PLAYLIST_PADDING = 10;
 
         if (mediaPlayerModel.getUseSuggestedPresentationDelay() && mpd.hasOwnProperty('suggestedPresentationDelay')) {
             delay = mpd.suggestedPresentationDelay;
+        } else if (mediaPlayerModel.getLiveDelay()) {
+            delay = mediaPlayerModel.getLiveDelay(); // If set by user, this value takes precedence
         } else if (!isNaN(fragmentDuration)) {
             delay = fragmentDuration * mediaPlayerModel.getLiveDelayFragmentCount();
         } else {
             delay = streamInfo.manifestInfo.minBufferTime * 2;
         }
-        return delay;
+
+        // cap target latency to:
+        // - dvrWindowSize / 2 for short playlists
+        // - dvrWindowSize - END_OF_PLAYLIST_PADDING for longer playlists
+        let targetDelayCapping = Math.max(dvrWindowSize - END_OF_PLAYLIST_PADDING, dvrWindowSize / 2);
+
+        return Math.min(delay, targetDelayCapping);
     }
 
     function reset() {
@@ -255,11 +267,11 @@ function PlaybackController() {
             presentationStartTime = presentationStartTime || liveStartTime;
 
         } else {
-            if (!isNaN(startTimeOffset) && startTimeOffset < streamInfo.duration && startTimeOffset >= 0) {
+            if (!isNaN(startTimeOffset) && startTimeOffset < Math.max(streamInfo.manifestInfo.duration, streamInfo.duration) && startTimeOffset >= 0) {
                 presentationStartTime = startTimeOffset;
             } else {
-                let cet = commonEarliestTime[streamInfo.id] || 0.0;
-                presentationStartTime = Math.max(cet, streamInfo.start);
+                let earliestTime = commonEarliestTime[streamInfo.id] || streamController.getActiveStreamCommonEarliestTime();
+                presentationStartTime = Math.max(earliestTime, streamInfo.start);
             }
         }
 
@@ -300,9 +312,10 @@ function PlaybackController() {
 
     function seekToStartTimeOffset() {
         let initialSeekTime = getStreamStartTime(streamInfo, false);
-        if (!isSeeking() && initialSeekTime > 0) {
-            log('Starting playback at offset: ' + initialSeekTime);
+        if (!initialSeekCompleted && initialSeekTime > 0) {
+            initialSeekCompleted = true;
             seek(initialSeekTime);
+            log('Starting playback at offset: ' + initialSeekTime);
         }
     }
 
@@ -319,12 +332,12 @@ function PlaybackController() {
     function onDataUpdateCompleted(e) {
         if (e.error) return;
 
-        var representationInfo = adapter.convertDataToTrack(manifestModel.getValue(), e.currentRepresentation);
-        var info = representationInfo.mediaInfo.streamInfo;
+        let representationInfo = adapter.convertDataToTrack(manifestModel.getValue(), e.currentRepresentation);
+        let info = representationInfo.mediaInfo.streamInfo;
 
         if (streamInfo.id !== info.id) return;
+        streamInfo = info;
 
-        streamInfo = representationInfo.mediaInfo.streamInfo;
         updateCurrentTime();
     }
 
@@ -416,12 +429,11 @@ function PlaybackController() {
         if (!ranges || !ranges.length) return;
         let bufferedStart = Math.max(ranges.start(0), streamInfo.start);
         commonEarliestTime[streamInfo.id] = commonEarliestTime[streamInfo.id] === undefined ? bufferedStart : Math.max(commonEarliestTime[streamInfo.id], bufferedStart);
-
-        if (isSeeking()) {
-            commonEarliestTime = {};
-        } else if (getTime() < commonEarliestTime[streamInfo.id]) {
-            seek(getStreamStartTime(streamInfo, true));
-        }
+        //Commenting this out for now I do not believe it is still needed after fix for issue #1275.
+        //we still want to trap commonEarliestTime for use on seek back to zero.
+        //if (!getTime() < commonEarliestTime[streamInfo.id]) {
+        //    seek(getStreamStartTime(streamInfo, true));
+        //}
     }
 
     function onBufferLevelStateChanged(e) {
@@ -475,7 +487,7 @@ function PlaybackController() {
         getIsDynamic: getIsDynamic,
         setLiveStartTime: setLiveStartTime,
         getLiveStartTime: getLiveStartTime,
-        getLiveDelay: getLiveDelay,
+        computeLiveDelay: computeLiveDelay,
         play: play,
         isPaused: isPaused,
         pause: pause,
